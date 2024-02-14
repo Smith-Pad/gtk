@@ -16,8 +16,7 @@
  * License along with this library. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef __GDK_MACOS_GL_CONTEXT_PRIVATE_H__
-#define __GDK_MACOS_GL_CONTEXT_PRIVATE_H__
+#pragma once
 
 #include "gdkmacosglcontext.h"
 
@@ -28,9 +27,7 @@
 #include "gdkmacosdisplay.h"
 #include "gdkmacossurface.h"
 
-#import <OpenGL/OpenGL.h>
-#import <OpenGL/gl3.h>
-#import <AppKit/AppKit.h>
+#import <epoxy/gl.h>
 
 G_BEGIN_DECLS
 
@@ -56,4 +53,3 @@ struct _GdkMacosGLContextClass
 
 G_END_DECLS
 
-#endif /* __GDK_MACOS_GL_CONTEXT_PRIVATE_H__ */

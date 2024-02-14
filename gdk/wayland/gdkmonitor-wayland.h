@@ -15,8 +15,7 @@
  * License along with this library. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef __GDK_WAYLAND_MONITOR_PRIVATE_H__
-#define __GDK_WAYLAND_MONITOR_PRIVATE_H__
+#pragma once
 
 #include <glib.h>
 #include "gdkwaylandmonitor.h"
@@ -32,11 +31,10 @@ struct _GdkWaylandMonitor {
   gboolean added;
 
   struct zxdg_output_v1 *xdg_output;
-  /* Size and position, can be either from wl_output or xdg_output */
-  int32_t x;
-  int32_t y;
-  int32_t width;
-  int32_t height;
+  /* Raw wl_output data */
+  GdkRectangle output_geometry;
+  /* Raw xdg_output data */
+  GdkRectangle xdg_output_geometry;
   char *name;
   char *description;
   gboolean wl_output_done;
@@ -47,4 +45,3 @@ struct _GdkWaylandMonitorClass {
   GdkMonitorClass parent_class;
 };
 
-#endif

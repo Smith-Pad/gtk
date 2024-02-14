@@ -57,6 +57,8 @@ struct _GtkInspectorLogs
   GtkWidget *vulkan;
   GtkWidget *selection;
   GtkWidget *clipboard;
+  GtkWidget *dmabuf;
+  GtkWidget *offload;
 
   GtkWidget *renderer;
   GtkWidget *cairo;
@@ -65,6 +67,7 @@ struct _GtkInspectorLogs
   GtkWidget *shaders;
   GtkWidget *surface;
   GtkWidget *glyphcache;
+  GtkWidget *verbose;
 
   GtkWidget *actions;
   GtkWidget *builder;
@@ -133,6 +136,8 @@ flag_toggled (GtkWidget        *button,
   update_flag (logs->vulkan, &flags, GDK_DEBUG_VULKAN);
   update_flag (logs->selection, &flags, GDK_DEBUG_SELECTION);
   update_flag (logs->clipboard, &flags, GDK_DEBUG_CLIPBOARD);
+  update_flag (logs->dmabuf, &flags, GDK_DEBUG_DMABUF);
+  update_flag (logs->offload, &flags, GDK_DEBUG_OFFLOAD);
   gdk_display_set_debug_flags (logs->display, flags);
 
   flags = gsk_get_debug_flags ();
@@ -143,6 +148,7 @@ flag_toggled (GtkWidget        *button,
   update_flag (logs->shaders, &flags, GSK_DEBUG_SHADERS);
   update_flag (logs->surface, &flags, GSK_DEBUG_SURFACE);
   update_flag (logs->glyphcache, &flags, GSK_DEBUG_GLYPH_CACHE);
+  update_flag (logs->verbose, &flags, GSK_DEBUG_VERBOSE);
   gsk_set_debug_flags (flags);
 
   toplevels = gtk_window_list_toplevels ();
@@ -196,6 +202,8 @@ gtk_inspector_logs_class_init (GtkInspectorLogsClass *klass)
   gtk_widget_class_bind_template_child (widget_class, GtkInspectorLogs, vulkan);
   gtk_widget_class_bind_template_child (widget_class, GtkInspectorLogs, selection);
   gtk_widget_class_bind_template_child (widget_class, GtkInspectorLogs, clipboard);
+  gtk_widget_class_bind_template_child (widget_class, GtkInspectorLogs, dmabuf);
+  gtk_widget_class_bind_template_child (widget_class, GtkInspectorLogs, offload);
 
   gtk_widget_class_bind_template_child (widget_class, GtkInspectorLogs, renderer);
   gtk_widget_class_bind_template_child (widget_class, GtkInspectorLogs, cairo);
@@ -204,6 +212,7 @@ gtk_inspector_logs_class_init (GtkInspectorLogsClass *klass)
   gtk_widget_class_bind_template_child (widget_class, GtkInspectorLogs, shaders);
   gtk_widget_class_bind_template_child (widget_class, GtkInspectorLogs, surface);
   gtk_widget_class_bind_template_child (widget_class, GtkInspectorLogs, glyphcache);
+  gtk_widget_class_bind_template_child (widget_class, GtkInspectorLogs, verbose);
 
   gtk_widget_class_bind_template_child (widget_class, GtkInspectorLogs, actions);
   gtk_widget_class_bind_template_child (widget_class, GtkInspectorLogs, builder);

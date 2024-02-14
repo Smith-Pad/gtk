@@ -17,8 +17,7 @@
  * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
-#ifndef __GDK_MACOS_CLIPBOARD_PRIVATE_H__
-#define __GDK_MACOS_CLIPBOARD_PRIVATE_H__
+#pragma once
 
 #include <AppKit/AppKit.h>
 
@@ -27,10 +26,6 @@
 #include "gdkmacospasteboard-private.h"
 
 G_BEGIN_DECLS
-
-#ifndef AVAILABLE_MAC_OS_X_VERSION_10_13_AND_LATER
-typedef NSString *NSPasteboardType;
-#endif
 
 #define GDK_TYPE_MACOS_CLIPBOARD (_gdk_macos_clipboard_get_type())
 
@@ -45,4 +40,3 @@ void               _gdk_macos_clipboard_register_drag_types       (NSWindow     
 
 G_END_DECLS
 
-#endif /* __GDK_MACOS_CLIPBOARD_PRIVATE_H__ */

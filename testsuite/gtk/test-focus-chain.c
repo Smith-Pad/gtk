@@ -67,6 +67,26 @@ check_focus_states (GtkWidget *focus_widget)
     }
 }
 
+static gboolean
+quit_iteration_loop (gpointer user_data)
+{
+  gboolean *keep_running = user_data;
+
+  *keep_running = FALSE;
+
+  return G_SOURCE_REMOVE;
+}
+
+static void
+timed_loop (guint millis)
+{
+  gboolean keep_running = TRUE;
+
+  g_timeout_add (millis, quit_iteration_loop, &keep_running);
+  while (keep_running)
+    g_main_context_iteration (NULL, TRUE);
+}
+
 static char *
 generate_focus_chain (GtkWidget        *window,
                       GtkDirectionType  dir)
@@ -125,6 +145,7 @@ generate_focus_chain (GtkWidget        *window,
         }
 
       g_string_append_printf (output, "%s\n", name);
+      timed_loop (100);
       count++;
 
       if (!first)
@@ -171,16 +192,6 @@ get_dir_for_file (const char *path)
 }
 
 static gboolean
-quit_iteration_loop (gpointer user_data)
-{
-  gboolean *keep_running = user_data;
-
-  *keep_running = FALSE;
-
-  return G_SOURCE_REMOVE;
-}
-
-static gboolean
 load_ui_file (GFile *ui_file,
               GFile *ref_file,
               const char *ext)
@@ -208,13 +219,17 @@ load_ui_file (GFile *ui_file,
   timeout_handle_id = g_timeout_add (2000,
                                      quit_iteration_loop,
                                      &keep_running);
-  while (keep_running)
-    {
-      if (!g_main_context_iteration (NULL, FALSE))
-        break;
-    }
+  while (keep_running && !gtk_window_is_active (GTK_WINDOW (window)))
+    g_main_context_iteration (NULL, TRUE);
+
   if (keep_running)
     g_source_remove (timeout_handle_id);
+
+  if (!gtk_window_is_active (GTK_WINDOW (window)))
+    {
+      g_print ("Skipping focus tests because window did not get focus. Headless display?");
+      exit (77);
+    }
 
   if (ext)
     {

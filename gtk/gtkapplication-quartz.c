@@ -57,14 +57,12 @@ typedef struct
 
 G_DEFINE_TYPE (GtkApplicationImplQuartz, gtk_application_impl_quartz, GTK_TYPE_APPLICATION_IMPL)
 
-@interface GtkApplicationQuartzDelegate : NSObject
+@interface GtkApplicationQuartzDelegate : NSObject<NSApplicationDelegate>
 {
   GtkApplicationImplQuartz *quartz;
 }
 
 - (id)initWithImpl:(GtkApplicationImplQuartz*)impl;
-- (NSApplicationTerminateReply) applicationShouldTerminate:(NSApplication *)sender;
-- (void)application:(NSApplication *)theApplication openFiles:(NSArray *)filenames;
 @end
 
 @implementation GtkApplicationQuartzDelegate
@@ -113,6 +111,11 @@ G_DEFINE_TYPE (GtkApplicationImplQuartz, gtk_application_impl_quartz, GTK_TYPE_A
   g_free (files);
 
   [theApplication replyToOpenOrPrint:NSApplicationDelegateReplySuccess];
+}
+
+- (BOOL)applicationSupportsSecureRestorableState:(NSApplication *)app
+{
+  return YES;
 }
 @end
 
@@ -227,7 +230,7 @@ gtk_application_impl_quartz_active_window_changed (GtkApplicationImpl *impl,
    * Without this, we might hold on to a reference of the window
    * preventing it from getting disposed.
    */
-  if (window != NULL && !g_object_get_data (G_OBJECT (window), "quartz-muxer-umap"))
+  if (window != NULL && !g_object_get_data (G_OBJECT (window), "quartz-muxer-unmap"))
     {
       gulong handler_id = g_signal_connect_object (window,
                                                    "unmap",

@@ -103,7 +103,7 @@ gtk_gesture_stylus_handle_event (GtkEventController *controller,
   priv = gtk_gesture_stylus_get_instance_private (GTK_GESTURE_STYLUS (controller));
   GTK_EVENT_CONTROLLER_CLASS (gtk_gesture_stylus_parent_class)->handle_event (controller, event, x, y);
 
-  if (!(priv->stylus_only || gdk_event_get_device_tool (event)))
+  if (priv->stylus_only && !gdk_event_get_device_tool (event))
     return FALSE;
 
   switch ((guint) gdk_event_get_event_type (event))
@@ -287,11 +287,11 @@ gtk_gesture_stylus_get_stylus_only (GtkGestureStylus *gesture)
 /**
  * gtk_gesture_stylus_set_stylus_only: (attributes org.gtk.Method.set_property=stylus-only)
  * @gesture: the gesture
- * @stylus_only: whether the gesture is used exclusivly for stylus events
+ * @stylus_only: whether the gesture is used exclusively for stylus events
  *
  * Sets the state of stylus-only
  *
- * If true, the gesture will exclusivly handle events from stylus input deivces,
+ * If true, the gesture will exclusively handle events from stylus input devices,
  * otherwise it'll handle events from any pointing device.
  *
  * Since: 4.10

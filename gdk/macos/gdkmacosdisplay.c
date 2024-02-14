@@ -36,8 +36,10 @@
 #include "gdkmacosglcontext-private.h"
 #include "gdkmacoskeymap-private.h"
 #include "gdkmacosmonitor-private.h"
+#include "gdkmacospopupsurface-private.h"
 #include "gdkmacosseat-private.h"
 #include "gdkmacossurface-private.h"
+#include "gdkmacostoplevelsurface-private.h"
 #include "gdkmacosutils-private.h"
 
 G_DEFINE_TYPE (GdkMacosDisplay, gdk_macos_display, GDK_TYPE_DISPLAY)
@@ -333,7 +335,7 @@ gdk_macos_display_queue_events (GdkDisplay *display)
     }
 }
 
-static void
+void
 _gdk_macos_display_surface_added (GdkMacosDisplay *self,
                                   GdkMacosSurface *surface)
 {
@@ -422,7 +424,7 @@ select_key_in_idle_cb (gpointer data)
   self->select_key_in_idle = 0;
 
   /* Don't steal focus from NSPanel, etc */
-  if (self->key_window_is_foregin)
+  if (self->key_window_is_foreign)
     return G_SOURCE_REMOVE;
 
   if (self->keyboard_surface == NULL)
@@ -539,29 +541,6 @@ _gdk_macos_display_surface_resigned_main (GdkMacosDisplay *self,
   _gdk_macos_display_clear_sorting (self);
 }
 
-static GdkSurface *
-gdk_macos_display_create_surface (GdkDisplay     *display,
-                                  GdkSurfaceType  surface_type,
-                                  GdkSurface     *parent,
-                                  int             x,
-                                  int             y,
-                                  int             width,
-                                  int             height)
-{
-  GdkMacosDisplay *self = (GdkMacosDisplay *)display;
-  GdkMacosSurface *surface;
-
-  g_assert (GDK_IS_MACOS_DISPLAY (self));
-  g_assert (!parent || GDK_IS_MACOS_SURFACE (parent));
-
-  surface = _gdk_macos_surface_new (self, surface_type, parent, x, y, width, height);
-
-  if (surface != NULL)
-    _gdk_macos_display_surface_added (self, surface);
-
-  return GDK_SURFACE (surface);
-}
-
 static GdkKeymap *
 gdk_macos_display_get_keymap (GdkDisplay *display)
 {
@@ -617,10 +596,11 @@ gdk_macos_display_class_init (GdkMacosDisplayClass *klass)
 
   object_class->finalize = gdk_macos_display_finalize;
 
+  display_class->toplevel_type = GDK_TYPE_MACOS_TOPLEVEL_SURFACE;
+  display_class->popup_type = GDK_TYPE_MACOS_POPUP_SURFACE;
   display_class->cairo_context_type = GDK_TYPE_MACOS_CAIRO_CONTEXT;
 
   display_class->beep = gdk_macos_display_beep;
-  display_class->create_surface = gdk_macos_display_create_surface;
   display_class->flush = gdk_macos_display_flush;
   display_class->get_keymap = gdk_macos_display_get_keymap;
   display_class->get_monitors = gdk_macos_display_get_monitors;
@@ -645,6 +625,7 @@ gdk_macos_display_init (GdkMacosDisplay *self)
   gdk_display_set_composited (GDK_DISPLAY (self), TRUE);
   gdk_display_set_input_shapes (GDK_DISPLAY (self), FALSE);
   gdk_display_set_rgba (GDK_DISPLAY (self), TRUE);
+  gdk_display_set_shadow_width (GDK_DISPLAY (self), FALSE);
 }
 
 GdkDisplay *
@@ -961,7 +942,7 @@ _gdk_macos_display_get_surfaces (GdkMacosDisplay *self)
       NSArray *array = [NSApp orderedWindows];
       GQueue sorted = G_QUEUE_INIT;
 
-      self->key_window_is_foregin = FALSE;
+      self->key_window_is_foreign = FALSE;
 
       for (id obj in array)
         {
@@ -969,7 +950,7 @@ _gdk_macos_display_get_surfaces (GdkMacosDisplay *self)
           GdkMacosSurface *surface;
 
           if ([nswindow isKeyWindow])
-            self->key_window_is_foregin = !GDK_IS_MACOS_WINDOW (nswindow);
+            self->key_window_is_foreign = !GDK_IS_MACOS_WINDOW (nswindow);
 
           if (!GDK_IS_MACOS_WINDOW (nswindow))
             continue;
@@ -1025,7 +1006,7 @@ _gdk_macos_display_get_nsevent (GdkEvent *event)
 }
 
 NSEvent *
-_gdk_macos_display_get_last_nsevent ()
+_gdk_macos_display_get_last_nsevent (void)
 {
   const GdkToNSEventMap *map = g_queue_peek_tail (&event_map);
   if (map)

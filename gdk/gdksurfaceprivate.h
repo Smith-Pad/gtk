@@ -17,22 +17,19 @@
 
 /* Uninstalled header defining types and functions internal to GDK */
 
-#ifndef __GDK_SURFACE_PRIVATE_H__
-#define __GDK_SURFACE_PRIVATE_H__
+#pragma once
 
 #include <gdk-pixbuf/gdk-pixbuf.h>
 #include "gdkenumtypes.h"
 #include "gdksurface.h"
 #include "gdktoplevel.h"
+#include <graphene.h>
 
 G_BEGIN_DECLS
 
-typedef enum
-{
-  GDK_SURFACE_TOPLEVEL,
-  GDK_SURFACE_POPUP,
-  GDK_SURFACE_DRAG
-} GdkSurfaceType;
+typedef struct _GdkSubsurface GdkSubsurface;
+
+typedef struct _GskRenderNode GskRenderNode;
 
 struct _GdkSurface
 {
@@ -56,10 +53,6 @@ struct _GdkSurface
   cairo_region_t *update_area;
   guint update_freeze_count;
   GdkFrameClockPhase pending_phases;
-  /* This is the update_area that was in effect when the current expose
-     started. It may be smaller than the expose area if we'e painting
-     more than we have to, but it represents the "true" damage. */
-  cairo_region_t *active_update_area;
 
   GdkToplevelState pending_set_flags;
   GdkToplevelState pending_unset_flags;
@@ -72,7 +65,6 @@ struct _GdkSurface
 
   guint modal_hint : 1;
   guint destroyed : 2;
-  guint in_update : 1;
   guint frame_clock_events_paused : 1;
   guint autohide : 1;
   guint shortcuts_inhibited : 1;
@@ -105,14 +97,20 @@ struct _GdkSurface
   cairo_region_t *opaque_region;
 
   GdkSeat *current_shortcuts_inhibited_seat;
+
+  GPtrArray *subsurfaces;
+
+  /* We keep the subsurfaces above and below the surface in two linked
+   * lists, which start here.
+   */
+  GdkSubsurface *subsurfaces_above;
+  GdkSubsurface *subsurfaces_below;
 };
 
 struct _GdkSurfaceClass
 {
   GObjectClass parent_class;
 
-  cairo_surface_t *
-               (* ref_cairo_surface)    (GdkSurface      *surface);
   void         (* hide)                 (GdkSurface      *surface);
   void         (* get_geometry)         (GdkSurface      *surface,
                                          int             *x,
@@ -155,12 +153,15 @@ struct _GdkSurfaceClass
                                          double              dx,
                                          double              dy);
 
-  int          (* get_scale_factor)       (GdkSurface      *surface);
+  double       (* get_scale)              (GdkSurface      *surface);
 
   void         (* set_opaque_region)      (GdkSurface      *surface,
                                            cairo_region_t *region);
   void         (* request_layout)         (GdkSurface     *surface);
   gboolean     (* compute_size)           (GdkSurface     *surface);
+
+  GdkSubsurface *
+               (* create_subsurface)      (GdkSurface          *surface);
 };
 
 #define GDK_SURFACE_DESTROYED(d) (((GdkSurface *)(d))->destroyed)
@@ -293,6 +294,8 @@ void gdk_surface_get_geometry (GdkSurface *surface,
                                int        *width,
                                int        *height);
 
+void                    gdk_surface_set_frame_clock             (GdkSurface             *surface,
+                                                                 GdkFrameClock          *clock);
 void                    gdk_surface_set_egl_native_window       (GdkSurface             *self,
                                                                  gpointer                native_window);
 void                    gdk_surface_ensure_egl_surface          (GdkSurface             *self,
@@ -347,8 +350,9 @@ void           gdk_surface_request_motion (GdkSurface *surface);
 
 gboolean       gdk_surface_supports_edge_constraints    (GdkSurface *surface);
 
-
+GdkSubsurface * gdk_surface_create_subsurface  (GdkSurface          *surface);
+gsize           gdk_surface_get_n_subsurfaces  (GdkSurface          *surface);
+GdkSubsurface * gdk_surface_get_subsurface     (GdkSurface          *surface,
+                                                gsize                idx);
 
 G_END_DECLS
-
-#endif /* __GDK_SURFACE_PRIVATE_H__ */

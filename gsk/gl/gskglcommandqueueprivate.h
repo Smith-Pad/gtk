@@ -18,8 +18,7 @@
  * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
-#ifndef __GSK_GL_COMMAND_QUEUE_PRIVATE_H__
-#define __GSK_GL_COMMAND_QUEUE_PRIVATE_H__
+#pragma once
 
 #include <gsk/gskprofilerprivate.h>
 
@@ -55,6 +54,7 @@ typedef struct _GskGLCommandBind
    */
   guint texture : 4;
 
+  /* the sampler to use. We set sampler to 15 to indicate external textures */
   guint sampler : 4;
 
   /* The identifier for the texture created with glGenTextures(). */
@@ -101,13 +101,15 @@ typedef struct _GskGLCommandDraw
 {
   GskGLCommandBatchAny head;
 
+  guint blend : 1;
+
   /* There doesn't seem to be a limit on the framebuffer identifier that
    * can be returned, so we have to use a whole unsigned for the framebuffer
    * we are drawing to. When processing batches, we check to see if this
    * changes and adjust the render target accordingly. Some sorting is
    * performed to reduce the amount we change framebuffers.
    */
-  guint framebuffer;
+  guint framebuffer : 31;
 
   /* The number of uniforms to change. This must be less than or equal to
    * GL_MAX_UNIFORM_LOCATIONS but only guaranteed up to 1024 by any OpenGL
@@ -169,9 +171,15 @@ typedef union _GskGLCommandBatch
 
 G_STATIC_ASSERT (sizeof (GskGLCommandBatch) == 32);
 
+typedef struct _GskGLSync {
+  guint id;
+  gpointer sync;
+} GskGLSync;
+
 DEFINE_INLINE_ARRAY (GskGLCommandBatches, gsk_gl_command_batches, GskGLCommandBatch)
 DEFINE_INLINE_ARRAY (GskGLCommandBinds, gsk_gl_command_binds, GskGLCommandBind)
 DEFINE_INLINE_ARRAY (GskGLCommandUniforms, gsk_gl_command_uniforms, GskGLCommandUniform)
+DEFINE_INLINE_ARRAY (GskGLSyncs, gsk_gl_syncs, GskGLSync)
 
 struct _GskGLCommandQueue
 {
@@ -229,10 +237,19 @@ struct _GskGLCommandQueue
 
   /* Array of samplers that we use for mag/min filter handling. It is indexed
    * by the sampler_index() function.
+   *
    * Note that when samplers are not supported (hello GLES), we fall back to
    * setting the texture filter, but that needs to be done for every texture.
+   *
+   * Also note that we don't use all of these samplers since some combinations
+   * are invalid. An index of SAMPLER_EXTERNAL is used to indicate an external
+   * texture, which needs special sampler treatment.
    */
   GLuint samplers[GSK_GL_N_FILTERS * GSK_GL_N_FILTERS];
+
+  /* Array of sync objects to wait on.
+   */
+  GskGLSyncs syncs;
 
   /* Discovered max texture size when loading the command queue so that we
    * can either scale down or slice textures to fit within this size. Assumed
@@ -269,6 +286,9 @@ struct _GskGLCommandQueue
   /* If the GL context is new enough for sampler support */
   guint has_samplers : 1;
 
+  /* If the GL context is new enough to support swizzling (ie is not GLES2) */
+  guint can_swizzle : 1;
+
   /* If we're inside a begin/end_frame pair */
   guint in_frame : 1;
 
@@ -289,15 +309,31 @@ void                gsk_gl_command_queue_begin_frame          (GskGLCommandQueue
 void                gsk_gl_command_queue_end_frame            (GskGLCommandQueue    *self);
 void                gsk_gl_command_queue_execute              (GskGLCommandQueue    *self,
                                                                guint                 surface_height,
-                                                               guint                 scale_factor,
+                                                               float                 scale,
                                                                const cairo_region_t *scissor,
                                                                guint                 default_framebuffer);
 int                 gsk_gl_command_queue_upload_texture       (GskGLCommandQueue    *self,
-                                                               GdkTexture           *texture);
+                                                               GdkTexture           *texture,
+                                                               gboolean              ensure_mipmap,
+                                                               gboolean             *out_can_mipmap);
 int                 gsk_gl_command_queue_create_texture       (GskGLCommandQueue    *self,
                                                                int                   width,
                                                                int                   height,
                                                                int                   format);
+
+
+typedef struct {
+  GdkTexture *texture;
+  int x;
+  int y;
+} GskGLTextureChunk;
+
+int                 gsk_gl_command_queue_upload_texture_chunks(GskGLCommandQueue    *self,
+                                                               gboolean              ensure_mipmap,
+                                                               unsigned int          n_chunks,
+                                                               GskGLTextureChunk    *chunks,
+                                                               gboolean             *out_can_mipmap);
+
 guint               gsk_gl_command_queue_create_framebuffer   (GskGLCommandQueue    *self);
 gboolean            gsk_gl_command_queue_create_render_target (GskGLCommandQueue    *self,
                                                                int                   width,
@@ -310,7 +346,7 @@ void                gsk_gl_command_queue_delete_program       (GskGLCommandQueue
 void                gsk_gl_command_queue_clear                (GskGLCommandQueue    *self,
                                                                guint                 clear_bits,
                                                                const graphene_rect_t *viewport);
-void                gsk_gl_command_queue_begin_draw           (GskGLCommandQueue    *self,
+gboolean            gsk_gl_command_queue_begin_draw           (GskGLCommandQueue    *self,
                                                                GskGLUniformProgram  *program_info,
                                                                guint                 width,
                                                                guint                 height);
@@ -360,6 +396,36 @@ gsk_gl_command_queue_bind_framebuffer (GskGLCommandQueue *self,
   return ret;
 }
 
+static inline GskGLSync *
+gsk_gl_syncs_get_sync (GskGLSyncs *syncs,
+                       guint       id)
+{
+  for (unsigned int i = 0; i < syncs->len; i++)
+    {
+      GskGLSync *sync = &syncs->items[i];
+      if (sync->id == id)
+        return sync;
+    }
+  return NULL;
+}
+
+static inline void
+gsk_gl_syncs_add_sync (GskGLSyncs *syncs,
+                       guint       id,
+                       gpointer    sync)
+{
+  GskGLSync *s;
+
+  s = gsk_gl_syncs_get_sync (syncs, id);
+  if (s)
+    g_assert (s->sync == sync);
+  else
+    {
+      s = gsk_gl_syncs_append (syncs);
+      s->id = id;
+      s->sync = sync;
+    }
+}
+
 G_END_DECLS
 
-#endif /* __GSK_GL_COMMAND_QUEUE_PRIVATE_H__ */

@@ -1396,6 +1396,10 @@ gtk_entry_init (GtkEntry *entry)
                              GTK_EVENT_CONTROLLER (catchall));
 
   priv->editing_canceled = FALSE;
+
+  gtk_accessible_update_property (GTK_ACCESSIBLE (entry),
+                                  GTK_ACCESSIBLE_PROPERTY_HAS_POPUP, TRUE,
+                                  -1);
 }
 
 static void
@@ -1642,13 +1646,17 @@ gtk_entry_measure (GtkWidget      *widget,
 {
   GtkEntry *entry = GTK_ENTRY (widget);
   GtkEntryPrivate *priv = gtk_entry_get_instance_private (entry);
+  int text_min, text_nat;
   int i;
 
   gtk_widget_measure (priv->text,
                       orientation,
                       for_size,
-                      minimum, natural,
+                      &text_min, &text_nat,
                       minimum_baseline, natural_baseline);
+
+  *minimum = text_min;
+  *natural = text_nat;
 
   for (i = 0; i < MAX_ICONS; i++)
     {
@@ -1687,6 +1695,14 @@ gtk_entry_measure (GtkWidget      *widget,
       *minimum = MAX (*minimum, prog_min);
       *natural = MAX (*natural, prog_nat);
     }
+
+  if (orientation == GTK_ORIENTATION_VERTICAL)
+    {
+      if (G_LIKELY (*minimum_baseline >= 0))
+        *minimum_baseline += (*minimum - text_min) / 2;
+      if (G_LIKELY (*natural_baseline >= 0))
+        *natural_baseline += (*natural - text_nat) / 2;
+    }
 }
 
 static void
@@ -1705,6 +1721,10 @@ gtk_entry_size_allocate (GtkWidget *widget,
   text_alloc.y = 0;
   text_alloc.width = width;
   text_alloc.height = height;
+
+  if (gtk_widget_get_valign (widget) != GTK_ALIGN_BASELINE_FILL &&
+      gtk_widget_get_valign (widget) != GTK_ALIGN_BASELINE_CENTER)
+    baseline = -1;
 
   for (i = 0; i < MAX_ICONS; i++)
     {
@@ -2098,7 +2118,7 @@ gtk_entry_get_visibility (GtkEntry *entry)
 }
 
 /**
- * gtk_entry_set_invisible_char: (attributes org.gtk.Method.sets_property=invisible-char)
+ * gtk_entry_set_invisible_char: (attributes org.gtk.Method.set_property=invisible-char)
  * @entry: a `GtkEntry`
  * @ch: a Unicode character
  *
@@ -2829,15 +2849,16 @@ gtk_entry_get_icon_at_pos (GtkEntry *entry,
   for (i = 0; i < MAX_ICONS; i++)
     {
       EntryIconInfo *icon_info = priv->icons[i];
-      double icon_x, icon_y;
+      graphene_point_t p;
 
       if (icon_info == NULL)
         continue;
 
-      gtk_widget_translate_coordinates (GTK_WIDGET (entry), icon_info->widget,
-                                        x, y, &icon_x, &icon_y);
+      if (!gtk_widget_compute_point (GTK_WIDGET (entry), icon_info->widget,
+                                     &GRAPHENE_POINT_INIT (x, y), &p))
+        continue;
 
-      if (gtk_widget_contains (icon_info->widget, icon_x, icon_y))
+      if (gtk_widget_contains (icon_info->widget, p.x, p.y))
         return i;
     }
 

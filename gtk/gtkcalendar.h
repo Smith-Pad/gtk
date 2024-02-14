@@ -25,8 +25,7 @@
  * GTK+ at ftp://ftp.gtk.org/pub/gtk/.
  */
 
-#ifndef __GTK_CALENDAR_H__
-#define __GTK_CALENDAR_H__
+#pragma once
 
 
 #if !defined (__GTK_H_INSIDE__) && !defined (GTK_COMPILATION)
@@ -79,6 +78,27 @@ void          gtk_calendar_set_show_day_names          (GtkCalendar *self,
 GDK_AVAILABLE_IN_ALL
 gboolean      gtk_calendar_get_show_day_names          (GtkCalendar *self);
 
+GDK_AVAILABLE_IN_4_14
+void          gtk_calendar_set_day                     (GtkCalendar *self,
+                                                        int          day);
+
+GDK_AVAILABLE_IN_4_14
+int           gtk_calendar_get_day                     (GtkCalendar *self);
+
+GDK_AVAILABLE_IN_4_14
+void          gtk_calendar_set_month                   (GtkCalendar *self,
+                                                        int          month);
+
+GDK_AVAILABLE_IN_4_14
+int           gtk_calendar_get_month                   (GtkCalendar *self);
+
+GDK_AVAILABLE_IN_4_14
+void          gtk_calendar_set_year                    (GtkCalendar *self,
+                                                        int          year);
+
+GDK_AVAILABLE_IN_4_14
+int           gtk_calendar_get_year                    (GtkCalendar *self);
+
 GDK_AVAILABLE_IN_ALL
 GDateTime *   gtk_calendar_get_date                    (GtkCalendar *self);
 
@@ -90,4 +110,3 @@ G_DEFINE_AUTOPTR_CLEANUP_FUNC(GtkCalendar, g_object_unref)
 
 G_END_DECLS
 
-#endif /* __GTK_CALENDAR_H__ */

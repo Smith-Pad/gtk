@@ -15,13 +15,11 @@
  * License along with this library. If not, see <http://www.gnu.org/licenses/>.
  */
 
-
-#ifndef __GTK_PRINTER_CPDB_H__
-#define __GTK_PRINTER_CPDB_H__
+#pragma once
 
 #include <glib-object.h>
 #include <cpdb/cpdb-frontend.h>
-#include <gtk/gtkprinterprivate.h>
+#include <gtk/print/gtkprinterprivate.h>
 
 G_BEGIN_DECLS
 
@@ -42,5 +40,3 @@ void                  gtk_printer_cpdb_set_printer_obj        (GtkPrinterCpdb   
                                                                cpdb_printer_obj_t   *printer_obj);
 
 G_END_DECLS
-
-#endif /* __GTK_PRINTER_CPDB_H__ */

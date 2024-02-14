@@ -15,8 +15,7 @@
  * License along with this library. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef __GTK_TREE_MODEL_H__
-#define __GTK_TREE_MODEL_H__
+#pragma once
 
 #if !defined (__GTK_H_INSIDE__) && !defined (GTK_COMPILATION)
 #error "Only <gtk/gtk.h> can be included directly."
@@ -70,6 +69,8 @@ typedef gboolean (* GtkTreeModelForeachFunc) (GtkTreeModel *model, GtkTreePath *
  * static for the lifetime of the object. A more complete description
  * of %GTK_TREE_MODEL_ITERS_PERSIST can be found in the overview of
  * this section.
+ *
+ * Deprecated: 4.10
  */
 typedef enum
 {
@@ -89,6 +90,8 @@ typedef enum
  * integer in the @stamp member, and put
  * model-specific data in the three @user_data
  * members.
+ *
+ * Deprecated: 4.10
  */
 struct _GtkTreeIter
 {
@@ -252,6 +255,8 @@ gboolean     gtk_tree_path_is_descendant    (GtkTreePath       *path,
  * A GtkTreeRowReference tracks model changes so that it always refers to the
  * same row (a `GtkTreePath` refers to a position, not a fixed row). Create a
  * new GtkTreeRowReference with gtk_tree_row_reference_new().
+ *
+ * Deprecated: 4.10: Use [iface@Gio.ListModel] instead
  */
 
 GDK_AVAILABLE_IN_ALL
@@ -410,4 +415,3 @@ G_DEFINE_AUTOPTR_CLEANUP_FUNC(GtkTreeRowReference, gtk_tree_row_reference_free)
 
 G_END_DECLS
 
-#endif /* __GTK_TREE_MODEL_H__ */

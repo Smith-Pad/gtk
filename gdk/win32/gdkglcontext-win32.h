@@ -18,9 +18,9 @@
  * License along with this library. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef __GDK_WIN32_GL_CONTEXT__
-#define __GDK_WIN32_GL_CONTEXT__
+#pragma once
 
+#ifndef DONT_INCLUDE_LIBEPOXY
 #include <epoxy/gl.h>
 #include <epoxy/wgl.h>
 
@@ -31,8 +31,17 @@
 #include "gdkglcontextprivate.h"
 #include "gdkdisplayprivate.h"
 #include "gdksurface.h"
+#else
+# define WIN32_LEAN_AND_MEAN
+# include <windows.h>
+# include <GL/gl.h>
+
+# include <glib.h>
+#endif
 
 G_BEGIN_DECLS
+
+#ifndef DONT_INCLUDE_LIBEPOXY
 
 #define GDK_WIN32_GL_CONTEXT_CLASS(klass)         (G_TYPE_CHECK_CLASS_CAST ((klass), GDK_TYPE_WIN32_GL_CONTEXT, GdkWin32GLContextClass))
 #define GDK_WIN32_GL_CONTEXT_GET_CLASS(obj)       (G_TYPE_INSTANCE_GET_CLASS ((obj), GDK_TYPE_WIN32_GL_CONTEXT, GdkWin32GLContextClass))
@@ -55,10 +64,10 @@ struct _GdkWin32GLContextClass
 
 typedef struct _GdkWin32GLContextWGL      GdkWin32GLContextWGL;
 
-gboolean  gdk_win32_display_init_wgl                (GdkDisplay *display,
-                                                     GError    **error);
-void      gdk_win32_gl_context_wgl_bind_surface     (GdkWin32GLContextWGL *ctx,
-                                                     GdkWin32Surface      *win32_surface);
+GdkGLContext *  gdk_win32_display_init_wgl              (GdkDisplay             *display,
+                                                         GError                **error);
+void            gdk_win32_gl_context_wgl_bind_surface   (GdkWin32GLContextWGL   *ctx,
+                                                         GdkWin32Surface        *win32_surface);
 
 GType     gdk_win32_gl_context_wgl_get_type         (void) G_GNUC_CONST;
 
@@ -78,6 +87,12 @@ GType     gdk_win32_gl_context_egl_get_type         (void) G_GNUC_CONST;
 void
 _gdk_win32_surface_invalidate_egl_framebuffer (GdkSurface *surface);
 
+#endif /* !DONT_INCLUDE_LIBEPOXY */
+
+HGLRC     gdk_win32_private_wglGetCurrentContext (void);
+BOOL      gdk_win32_private_wglMakeCurrent       (HDC hdc,
+                                                  HGLRC hglrc);
+void      gdk_win32_private_wglDeleteContext     (HGLRC hglrc);
+
 G_END_DECLS
 
-#endif /* __GDK_WIN32_GL_CONTEXT__ */

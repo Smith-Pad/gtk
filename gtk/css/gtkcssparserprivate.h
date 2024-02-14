@@ -18,8 +18,7 @@
  */
 
 
-#ifndef __GTK_CSS_PARSER_H__
-#define __GTK_CSS_PARSER_H__
+#pragma once
 
 #include "gtkcssenums.h"
 #include "gtkcsstokenizerprivate.h"
@@ -117,6 +116,7 @@ gboolean                gtk_css_parser_has_token                (GtkCssParser   
                                                                  GtkCssTokenType                 token_type);
 gboolean                gtk_css_parser_has_ident                (GtkCssParser                   *self,
                                                                  const char                     *ident);
+gboolean                gtk_css_parser_has_url                  (GtkCssParser                   *self);
 gboolean                gtk_css_parser_has_number               (GtkCssParser                   *self);
 gboolean                gtk_css_parser_has_integer              (GtkCssParser                   *self);
 gboolean                gtk_css_parser_has_function             (GtkCssParser                   *self,
@@ -152,4 +152,3 @@ gsize                   gtk_css_parser_consume_any              (GtkCssParser   
 
 G_END_DECLS
 
-#endif /* __GTK_CSS_PARSER_H__ */

@@ -43,6 +43,7 @@
 #include "gdkrectangle.h"
 #include "gdktoplevelprivate.h"
 #include "gdkvulkancontext.h"
+#include "gdksubsurfaceprivate.h"
 
 #include <math.h>
 
@@ -56,7 +57,7 @@
  * A `GdkSurface` is a rectangular region on the screen.
  *
  * It’s a low-level object, used to implement high-level objects
- * such as [class@Gtk.Window] or [class@Gtk.Dialog] in GTK.
+ * such as [GtkWindow](../gtk4/class.Window.html).
  *
  * The surfaces you see in practice are either [iface@Gdk.Toplevel] or
  * [iface@Gdk.Popup], and those interfaces provide much of the required
@@ -95,6 +96,7 @@ enum {
   PROP_WIDTH,
   PROP_HEIGHT,
   PROP_SCALE_FACTOR,
+  PROP_SCALE,
   LAST_PROP
 };
 
@@ -113,9 +115,6 @@ static void gdk_surface_get_property (GObject      *object,
 
 static void update_cursor               (GdkDisplay *display,
                                          GdkDevice  *device);
-
-static void gdk_surface_set_frame_clock (GdkSurface      *surface,
-                                         GdkFrameClock  *clock);
 
 static void gdk_surface_queue_set_is_mapped (GdkSurface *surface,
                                              gboolean    is_mapped);
@@ -256,7 +255,7 @@ maybe_flip_position (int       bounds_pos,
   *flipped = TRUE;
   secondary = rect_pos + (1 - rect_sign) * rect_size / 2 - offset - (1 - surface_sign) * surface_size / 2;
 
-  if (secondary >= bounds_pos && secondary + surface_size <= bounds_pos + bounds_size)
+  if ((secondary >= bounds_pos && secondary + surface_size <= bounds_pos + bounds_size) || primary > bounds_pos + bounds_size)
     return secondary;
 
   *flipped = FALSE;
@@ -487,6 +486,32 @@ gdk_surface_init (GdkSurface *surface)
 
   surface->device_cursor = g_hash_table_new_full (NULL, NULL,
                                                  NULL, g_object_unref);
+
+  surface->subsurfaces = g_ptr_array_new ();
+}
+
+static double
+gdk_surface_real_get_scale (GdkSurface *surface)
+{
+  return 1.0;
+}
+
+static GdkSubsurface *
+gdk_surface_real_create_subsurface (GdkSurface *surface)
+{
+  GDK_DISPLAY_DEBUG (gdk_surface_get_display (surface), OFFLOAD,
+                     "Subsurfaces not supported for %s", G_OBJECT_TYPE_NAME (surface));
+  return NULL;
+}
+
+static void
+gdk_surface_constructed (GObject *object)
+{
+  G_GNUC_UNUSED GdkSurface *surface = GDK_SURFACE (object);
+
+  g_assert (surface->frame_clock != NULL);
+
+  G_OBJECT_CLASS (gdk_surface_parent_class)->constructed (object);
 }
 
 static void
@@ -494,11 +519,14 @@ gdk_surface_class_init (GdkSurfaceClass *klass)
 {
   GObjectClass *object_class = G_OBJECT_CLASS (klass);
 
+  object_class->constructed = gdk_surface_constructed;
   object_class->finalize = gdk_surface_finalize;
   object_class->set_property = gdk_surface_set_property;
   object_class->get_property = gdk_surface_get_property;
 
   klass->beep = gdk_surface_real_beep;
+  klass->get_scale = gdk_surface_real_get_scale;
+  klass->create_subsurface = gdk_surface_real_create_subsurface;
 
   /**
    * GdkSurface:cursor: (attributes org.gtk.Property.get=gdk_surface_get_cursor org.gtk.Property.set=gdk_surface_set_cursor)
@@ -564,10 +592,25 @@ gdk_surface_class_init (GdkSurfaceClass *klass)
    * GdkSurface:scale-factor: (attributes org.gtk.Property.get=gdk_surface_get_scale_factor)
    *
    * The scale factor of the surface.
+   *
+   * The scale factor is the next larger integer,
+   * compared to [property@Gdk.Surface:scale].
    */
   properties[PROP_SCALE_FACTOR] =
       g_param_spec_int ("scale-factor", NULL, NULL,
                         1, G_MAXINT, 1,
+                        G_PARAM_READABLE | G_PARAM_STATIC_STRINGS);
+
+  /**
+   * GdkSurface:scale: (attributes org.gtk.Property.get=gdk_surface_get_scale)
+   *
+   * The scale of the surface.
+   *
+   * Since: 4.12
+   */
+  properties[PROP_SCALE] =
+      g_param_spec_double ("scale", NULL, NULL,
+                        1., G_MAXDOUBLE, 1.,
                         G_PARAM_READABLE | G_PARAM_STATIC_STRINGS);
 
   g_object_class_install_properties (object_class, LAST_PROP, properties);
@@ -726,6 +769,10 @@ gdk_surface_finalize (GObject *object)
   if (surface->parent)
     surface->parent->children = g_list_remove (surface->parent->children, surface);
 
+  g_assert (surface->subsurfaces->len == 0);
+
+  g_ptr_array_unref (surface->subsurfaces);
+
   G_OBJECT_CLASS (gdk_surface_parent_class)->finalize (object);
 }
 
@@ -800,6 +847,10 @@ gdk_surface_get_property (GObject    *object,
       g_value_set_int (value, gdk_surface_get_scale_factor (surface));
       break;
 
+    case PROP_SCALE:
+      g_value_set_double (value, gdk_surface_get_scale (surface));
+      break;
+
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -818,21 +869,6 @@ _gdk_surface_update_size (GdkSurface *surface)
   g_object_notify (G_OBJECT (surface), "height");
 }
 
-static GdkSurface *
-gdk_surface_new (GdkDisplay     *display,
-                 GdkSurfaceType  surface_type,
-                 GdkSurface     *parent,
-                 int             x,
-                 int             y,
-                 int             width,
-                 int             height)
-{
-  return gdk_display_create_surface (display,
-                                     surface_type,
-                                     parent,
-                                     x, y, width, height);
-}
-
 /**
  * gdk_surface_new_toplevel: (constructor)
  * @display: the display to create the surface on
@@ -846,8 +882,9 @@ gdk_surface_new_toplevel (GdkDisplay *display)
 {
   g_return_val_if_fail (GDK_IS_DISPLAY (display), NULL);
 
-  return gdk_surface_new (display, GDK_SURFACE_TOPLEVEL,
-                          NULL, 0, 0, 1, 1);
+  return g_object_new (GDK_DISPLAY_GET_CLASS (display)->toplevel_type,
+                       "display", display,
+                       NULL);
 }
 
 /**
@@ -867,11 +904,16 @@ gdk_surface_new_popup (GdkSurface *parent,
                        gboolean    autohide)
 {
   GdkSurface *surface;
+  GdkDisplay *display;
 
   g_return_val_if_fail (GDK_IS_SURFACE (parent), NULL);
 
-  surface = gdk_surface_new (parent->display, GDK_SURFACE_POPUP,
-                             parent, 0, 0, 100, 100);
+  display = gdk_surface_get_display (parent);
+
+  surface = g_object_new (GDK_DISPLAY_GET_CLASS (display)->popup_type,
+                         "display", display,
+                         "parent", parent,
+                         NULL);
 
   surface->autohide = autohide;
 
@@ -1204,77 +1246,20 @@ gdk_surface_create_cairo_context (GdkSurface *surface)
  * @surface: a `GdkSurface`
  * @error: return location for an error
  *
- * Creates a new `GdkVulkanContext` for rendering on @surface.
+ * Sets an error and returns %NULL.
  *
- * If the creation of the `GdkVulkanContext` failed, @error will be set.
+ * Returns: (transfer full): %NULL
  *
- * Returns: (transfer full): the newly created `GdkVulkanContext`, or
- *   %NULL on error
+ * Deprecated: 4.14: GTK does not expose any Vulkan internals. This
+ *   function is a leftover that was accidentally exposed.
  */
 GdkVulkanContext *
 gdk_surface_create_vulkan_context (GdkSurface  *surface,
                                    GError    **error)
 {
-  GdkDisplay *display;
-
-  g_return_val_if_fail (GDK_IS_SURFACE (surface), NULL);
-  g_return_val_if_fail (error == NULL || *error == NULL, NULL);
-
-  if (gdk_display_get_debug_flags (surface->display) & GDK_DEBUG_VULKAN_DISABLE)
-    {
-      g_set_error_literal (error, GDK_VULKAN_ERROR, GDK_VULKAN_ERROR_NOT_AVAILABLE,
-                           _("Vulkan support disabled via GDK_DEBUG"));
-      return NULL;
-    }
-
-  display = surface->display;
-
-  if (GDK_DISPLAY_GET_CLASS (display)->vk_extension_name == NULL)
-    {
-      g_set_error (error, GDK_VULKAN_ERROR, GDK_VULKAN_ERROR_UNSUPPORTED,
-                   "The %s backend has no Vulkan support.", G_OBJECT_TYPE_NAME (display));
-      return FALSE;
-    }
-
-  return g_initable_new (GDK_DISPLAY_GET_CLASS (display)->vk_context_type,
-                         NULL,
-                         error,
-                         "surface", surface,
-                         NULL);
-}
-
-/* Code for dirty-region queueing
- */
-static GSList *update_surfaces = NULL;
-
-static void
-gdk_surface_add_update_surface (GdkSurface *surface)
-{
-  GSList *tmp;
-
-  /*  Check whether "surface" is already in "update_surfaces" list.
-   *  It could be added during execution of gtk_widget_destroy() when
-   *  setting focus widget to NULL and redrawing old focus widget.
-   *  See bug 711552.
-   */
-  tmp = g_slist_find (update_surfaces, surface);
-  if (tmp != NULL)
-    return;
-
-  update_surfaces = g_slist_prepend (update_surfaces, g_object_ref (surface));
-}
-
-static void
-gdk_surface_remove_update_surface (GdkSurface *surface)
-{
-  GSList *link;
-
-  link = g_slist_find (update_surfaces, surface);
-  if (link != NULL)
-    {
-      update_surfaces = g_slist_delete_link (update_surfaces, link);
-      g_object_unref (surface);
-    }
+  g_set_error (error, GDK_VULKAN_ERROR, GDK_VULKAN_ERROR_UNSUPPORTED,
+               "GTK does not expose Vulkan internals.");
+  return FALSE;
 }
 
 static gboolean
@@ -1303,46 +1288,6 @@ gdk_surface_schedule_update (GdkSurface *surface)
   if (frame_clock)
     gdk_frame_clock_request_phase (gdk_surface_get_frame_clock (surface),
                                    GDK_FRAME_CLOCK_PHASE_PAINT);
-}
-
-static void
-gdk_surface_process_updates_internal (GdkSurface *surface)
-{
-  /* Ensure the surface lives while updating it */
-  g_object_ref (surface);
-
-  surface->in_update = TRUE;
-
-  /* If an update got queued during update processing, we can get a
-   * surface in the update queue that has an empty update_area.
-   * just ignore it.
-   */
-  if (surface->update_area)
-    {
-      g_assert (surface->active_update_area == NULL); /* No reentrancy */
-
-      surface->active_update_area = surface->update_area;
-      surface->update_area = NULL;
-
-      if (GDK_SURFACE_IS_MAPPED (surface))
-        {
-          cairo_region_t *expose_region;
-          gboolean handled;
-
-          expose_region = cairo_region_copy (surface->active_update_area);
-
-          g_signal_emit (surface, signals[RENDER], 0, expose_region, &handled);
-
-          cairo_region_destroy (expose_region);
-        }
-
-      cairo_region_destroy (surface->active_update_area);
-      surface->active_update_area = NULL;
-    }
-
-  surface->in_update = FALSE;
-
-  g_object_unref (surface);
 }
 
 static void
@@ -1402,28 +1347,32 @@ gdk_surface_paint_on_clock (GdkFrameClock *clock,
                             void          *data)
 {
   GdkSurface *surface = GDK_SURFACE (data);
+  cairo_region_t *expose_region;
 
   g_return_if_fail (GDK_IS_SURFACE (surface));
 
-  if (GDK_SURFACE_DESTROYED (surface))
+  if (GDK_SURFACE_DESTROYED (surface) ||
+      !surface->update_area ||
+      surface->update_freeze_count ||
+      gdk_surface_is_toplevel_frozen (surface))
     return;
 
-  g_object_ref (surface);
+  surface->pending_phases &= ~GDK_FRAME_CLOCK_PHASE_PAINT;
+  expose_region = surface->update_area;
+  surface->update_area = NULL;
 
-  if (surface->update_area &&
-      !surface->update_freeze_count &&
-      !gdk_surface_is_toplevel_frozen (surface) &&
-
-      /* Don't recurse into process_updates_internal, we'll
-       * do the update later when idle instead. */
-      !surface->in_update)
+  if (GDK_SURFACE_IS_MAPPED (surface))
     {
-      surface->pending_phases &= ~GDK_FRAME_CLOCK_PHASE_PAINT;
-      gdk_surface_process_updates_internal (surface);
-      gdk_surface_remove_update_surface (surface);
+      gboolean handled;
+
+      g_object_ref (surface);
+
+      g_signal_emit (surface, signals[RENDER], 0, expose_region, &handled);
+
+      g_object_unref (surface);
     }
 
-  g_object_unref (surface);
+  cairo_region_destroy (expose_region);
 }
 
 /*
@@ -1471,7 +1420,6 @@ impl_surface_add_update_area (GdkSurface     *impl_surface,
     cairo_region_union (impl_surface->update_area, region);
   else
     {
-      gdk_surface_add_update_surface (impl_surface);
       impl_surface->update_area = cairo_region_copy (region);
       gdk_surface_schedule_update (impl_surface);
     }
@@ -1555,8 +1503,6 @@ _gdk_surface_clear_update_area (GdkSurface *surface)
 
   if (surface->update_area)
     {
-      gdk_surface_remove_update_surface (surface);
-
       cairo_region_destroy (surface->update_area);
       surface->update_area = NULL;
     }
@@ -1576,6 +1522,9 @@ void
 gdk_surface_freeze_updates (GdkSurface *surface)
 {
   g_return_if_fail (GDK_IS_SURFACE (surface));
+
+  if (GDK_DEBUG_CHECK (NO_VSYNC))
+    return;
 
   surface->update_freeze_count++;
   if (surface->update_freeze_count == 1)
@@ -1608,6 +1557,9 @@ void
 gdk_surface_thaw_updates (GdkSurface *surface)
 {
   g_return_if_fail (GDK_IS_SURFACE (surface));
+
+  if (GDK_DEBUG_CHECK (NO_VSYNC))
+    return;
 
   g_return_if_fail (surface->update_freeze_count > 0);
 
@@ -1741,7 +1693,7 @@ gdk_surface_get_device_position (GdkSurface       *surface,
  * For toplevel surfaces, withdraws them, so they will no longer be
  * known to the window manager; for all surfaces, unmaps them, so
  * they won’t be displayed. Normally done automatically as
- * part of [method@Gtk.Widget.hide].
+ * part of [gtk_widget_hide()](../gtk4/method.Widget.hide.html).
  */
 void
 gdk_surface_hide (GdkSurface *surface)
@@ -2358,12 +2310,14 @@ _gdk_windowing_got_event (GdkDisplay *display,
  * Returns: a pointer to the newly allocated surface. The caller
  *   owns the surface and should call cairo_surface_destroy() when done
  *   with it.
+ *
+ * Deprecated: 4.12: Create a suitable cairo image surface yourself
  */
 cairo_surface_t *
-gdk_surface_create_similar_surface (GdkSurface *     surface,
-                                    cairo_content_t content,
-                                    int             width,
-                                    int             height)
+gdk_surface_create_similar_surface (GdkSurface      *surface,
+                                    cairo_content_t  content,
+                                    int              width,
+                                    int              height)
 {
   cairo_surface_t *similar_surface;
   int scale;
@@ -2501,7 +2455,7 @@ gdk_surface_resume_events (GdkFrameClock *clock,
     }
 }
 
-static void
+void
 gdk_surface_set_frame_clock (GdkSurface     *surface,
                              GdkFrameClock *clock)
 {
@@ -2596,25 +2550,47 @@ gdk_surface_get_frame_clock (GdkSurface *surface)
  * pixel-based data the scale value can be used to determine whether to
  * use a pixel resource with higher resolution data.
  *
- * The scale of a surface may change during runtime.
+ * The scale factor may change during the lifetime of the surface.
  *
  * Returns: the scale factor
  */
 int
 gdk_surface_get_scale_factor (GdkSurface *surface)
 {
-  GdkSurfaceClass *class;
-
   g_return_val_if_fail (GDK_IS_SURFACE (surface), 1);
 
+  return (int) ceil (gdk_surface_get_scale (surface));
+}
+
+/**
+ * gdk_surface_get_scale: (attributes org.gtk.Method.get_property=scale)
+ * @surface: surface to get scale for
+ *
+ * Returns the internal scale that maps from surface coordinates
+ * to the actual device pixels.
+ *
+ * When the scale is bigger than 1, the windowing system prefers to get
+ * buffers with a resolution that is bigger than the surface size (e.g.
+ * to show the surface on a high-resolution display, or in a magnifier).
+ *
+ * Compare with [method@Gdk.Surface.get_scale_factor], which returns the
+ * next larger integer.
+ *
+ * The scale may change during the lifetime of the surface.
+ *
+ * Returns: the scale
+ *
+ * Since: 4.12
+ */
+double
+gdk_surface_get_scale (GdkSurface *surface)
+{
+  g_return_val_if_fail (GDK_IS_SURFACE (surface), 1.);
+
   if (GDK_SURFACE_DESTROYED (surface))
-    return 1;
+    return 1.;
 
-  class = GDK_SURFACE_GET_CLASS (surface);
-  if (class->get_scale_factor)
-    return class->get_scale_factor (surface);
-
-  return 1;
+  return GDK_SURFACE_GET_CLASS (surface)->get_scale (surface);
 }
 
 /**
@@ -2637,7 +2613,7 @@ gdk_surface_get_scale_factor (GdkSurface *surface)
  * GTK will update this property automatically if the @surface background
  * is opaque, as we know where the opaque regions are. If your surface
  * background is not opaque, please update this property in your
- * [vfunc@Gtk.Widget.css_changed] handler.
+ * [GtkWidgetClass.css_changed](../gtk4/vfunc.Widget.css_changed.html) handler.
  */
 void
 gdk_surface_set_opaque_region (GdkSurface      *surface,
@@ -2863,7 +2839,7 @@ add_event_mark (GdkEvent *event,
   class = g_type_class_ref (GDK_TYPE_EVENT_TYPE);
   value = g_enum_get_value (class, event_type);
   g_type_class_unref (class);
-  kind = value ? value->value_nick : "event";
+  kind = value ? value->value_nick : "Event";
 
   switch ((int) event_type)
     {
@@ -2933,7 +2909,7 @@ add_event_mark (GdkEvent *event,
       break;
     }
 
-  gdk_profiler_add_mark (time, end_time - time, "event", message ? message : kind);
+  gdk_profiler_add_mark (time, end_time - time, "Event", message ? message : kind);
 
   g_free (message);
 #endif
@@ -3070,4 +3046,33 @@ gdk_surface_leave_monitor (GdkSurface *surface,
                            GdkMonitor *monitor)
 {
   g_signal_emit (surface, signals[LEAVE_MONITOR], 0, monitor);
+}
+
+GdkSubsurface *
+gdk_surface_create_subsurface (GdkSurface *surface)
+{
+  GdkSubsurface *subsurface;
+
+  subsurface = GDK_SURFACE_GET_CLASS (surface)->create_subsurface (surface);
+
+  if (subsurface)
+    {
+      subsurface->parent = g_object_ref (surface);
+      g_ptr_array_add (surface->subsurfaces, subsurface);
+    }
+
+  return subsurface;
+}
+
+gsize
+gdk_surface_get_n_subsurfaces (GdkSurface *surface)
+{
+  return surface->subsurfaces->len;
+}
+
+GdkSubsurface *
+gdk_surface_get_subsurface (GdkSurface *surface,
+                            gsize       idx)
+{
+  return g_ptr_array_index (surface->subsurfaces, idx);
 }

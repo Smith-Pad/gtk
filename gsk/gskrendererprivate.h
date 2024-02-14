@@ -16,12 +16,12 @@
  * License along with this library. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef __GSK_RENDERER_PRIVATE_H__
-#define __GSK_RENDERER_PRIVATE_H__
+#pragma once
 
 #include "gskrenderer.h"
 #include "gskprofilerprivate.h"
 #include "gskdebugprivate.h"
+#include "gskoffloadprivate.h"
 
 G_BEGIN_DECLS
 
@@ -38,7 +38,10 @@ struct _GskRendererClass
 {
   GObjectClass parent_class;
 
+  gboolean supports_offload;
+
   gboolean             (* realize)                              (GskRenderer            *renderer,
+                                                                 GdkDisplay             *display,
                                                                  GdkSurface             *surface,
                                                                  GError                **error);
   void                 (* unrealize)                            (GskRenderer            *renderer);
@@ -51,8 +54,6 @@ struct _GskRendererClass
                                                                  const cairo_region_t   *invalid);
 };
 
-GskRenderNode *         gsk_renderer_get_root_node              (GskRenderer    *renderer);
-
 GskProfiler *           gsk_renderer_get_profiler               (GskRenderer    *renderer);
 
 GskDebugFlags           gsk_renderer_get_debug_flags            (GskRenderer    *renderer);
@@ -61,4 +62,3 @@ void                    gsk_renderer_set_debug_flags            (GskRenderer    
 
 G_END_DECLS
 
-#endif /* __GSK_RENDERER_PRIVATE_H__ */

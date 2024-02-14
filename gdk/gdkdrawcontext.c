@@ -69,6 +69,12 @@ gdk_draw_context_default_surface_resized (GdkDrawContext *context)
 }
 
 static void
+gdk_draw_context_default_empty_frame (GdkDrawContext *context)
+{
+  g_warning ("FIXME: Implement GdkDrawContext.empty_frame in %s", G_OBJECT_TYPE_NAME (context));
+}
+
+static void
 gdk_draw_context_dispose (GObject *gobject)
 {
   GdkDrawContext *context = GDK_DRAW_CONTEXT (gobject);
@@ -161,6 +167,7 @@ gdk_draw_context_class_init (GdkDrawContextClass *klass)
   gobject_class->dispose = gdk_draw_context_dispose;
 
   klass->surface_resized = gdk_draw_context_default_surface_resized;
+  klass->empty_frame = gdk_draw_context_default_empty_frame;
 
   /**
    * GdkDrawContext:display: (attributes org.gtk.Property.get=gdk_draw_context_get_display)
@@ -298,8 +305,8 @@ gdk_draw_context_get_surface (GdkDrawContext *context)
  *
  * When using GTK, the widget system automatically places calls to
  * gdk_draw_context_begin_frame() and gdk_draw_context_end_frame() via the
- * use of [class@Gsk.Renderer]s, so application code does not need to call
- * these functions explicitly.
+ * use of [GskRenderer](../gsk4/class.Renderer.html)s, so application code
+ * does not need to call these functions explicitly.
  */
 void
 gdk_draw_context_begin_frame (GdkDrawContext       *context,
@@ -311,19 +318,20 @@ gdk_draw_context_begin_frame (GdkDrawContext       *context,
   g_return_if_fail (priv->surface != NULL);
   g_return_if_fail (region != NULL);
 
-  gdk_draw_context_begin_frame_full (context, FALSE, region);
+  gdk_draw_context_begin_frame_full (context, GDK_MEMORY_U8, region);
 }
 
 /*
- * @prefers_high_depth: %TRUE to request a higher bit depth
+ * @depth: best depth to render in
  *
- * If high depth is preferred, GDK will see about providing a rendering target
- * that supports higher bit depth than 8 bits per channel. Typically this means
- * a target supporting 16bit floating point pixels, but that is not guaranteed.
+ * If the given depth is not `GDK_MEMORY_U8`, GDK will see about providing a
+ * rendering target that supports a higher bit depth than 8 bits per channel.
+ * Typically this means a target supporting 16bit floating point pixels, but
+ * that is not guaranteed.
  *
  * This is only a request and if the GDK backend does not support HDR rendering
  * or does not consider it worthwhile, it may choose to not honor the request.
- * It may also choose to provide high depth even if it was not requested.
+ * It may also choose to provide a different depth even if it was not requested.
  * Typically the steps undertaken by a backend are:
  * 1. Check if high depth is supported by this drawing backend.
  * 2. Check if the compositor supports high depth.
@@ -333,12 +341,12 @@ gdk_draw_context_begin_frame (GdkDrawContext       *context,
  * In either of those cases, the context will usually choose to not honor the request.
  *
  * The rendering code must be able to deal with content in any bit depth, no matter
- * the preference. The prefers_high_depth argument is only a hint and GDK is free
+ * the preference. The depth argument is only a hint and GDK is free
  * to choose.
  */
 void
 gdk_draw_context_begin_frame_full (GdkDrawContext       *context,
-                                   gboolean              prefers_high_depth,
+                                   GdkMemoryDepth        depth,
                                    const cairo_region_t *region)
 {
   GdkDrawContextPrivate *priv = gdk_draw_context_get_instance_private (context);
@@ -365,12 +373,18 @@ gdk_draw_context_begin_frame_full (GdkDrawContext       *context,
     }
 
   if (gdk_display_get_debug_flags (priv->display) & GDK_DEBUG_HIGH_DEPTH)
-    prefers_high_depth = TRUE;
+    depth = GDK_MEMORY_FLOAT32;
 
   priv->frame_region = cairo_region_copy (region);
   priv->surface->paint_context = g_object_ref (context);
 
-  GDK_DRAW_CONTEXT_GET_CLASS (context)->begin_frame (context, prefers_high_depth, priv->frame_region);
+  GDK_DRAW_CONTEXT_GET_CLASS (context)->begin_frame (context, depth, priv->frame_region);
+
+  cairo_region_intersect_rectangle (priv->frame_region,
+                                    &(cairo_rectangle_int_t) {
+                                      0, 0,
+                                      priv->surface->width, priv->surface->height
+                                    });
 }
 
 #ifdef HAVE_SYSPROF
@@ -462,4 +476,18 @@ gdk_draw_context_get_frame_region (GdkDrawContext *context)
   g_return_val_if_fail (GDK_IS_DRAW_CONTEXT (context), NULL);
 
   return priv->frame_region;
+}
+
+void
+gdk_draw_context_empty_frame (GdkDrawContext *context)
+{
+  GdkDrawContextPrivate *priv = gdk_draw_context_get_instance_private (context);
+
+  g_return_if_fail (GDK_IS_DRAW_CONTEXT (context));
+  g_return_if_fail (priv->surface != NULL);
+
+  if (GDK_SURFACE_DESTROYED (priv->surface))
+    return;
+
+  GDK_DRAW_CONTEXT_GET_CLASS (context)->empty_frame (context);
 }

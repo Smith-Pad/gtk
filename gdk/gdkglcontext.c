@@ -78,12 +78,17 @@
 
 #include "gdkdebugprivate.h"
 #include "gdkdisplayprivate.h"
-#include <glib/gi18n-lib.h>
+#include "gdkdmabufeglprivate.h"
+#include "gdkdmabuffourccprivate.h"
 #include "gdkmemoryformatprivate.h"
 #include "gdkmemorytextureprivate.h"
 #include "gdkprofilerprivate.h"
+#include "gdkglversionprivate.h"
+#include "gdkdmabufformatsprivate.h"
 
 #include "gdkprivate.h"
+
+#include <glib/gi18n-lib.h>
 
 #ifdef GDK_WINDOWING_WIN32
 # include "gdk/win32/gdkwin32.h"
@@ -94,18 +99,26 @@
 #include <epoxy/egl.h>
 #endif
 
+#include <math.h>
+
 #define DEFAULT_ALLOWED_APIS GDK_GL_API_GL | GDK_GL_API_GLES
 
-typedef struct {
-  int major;
-  int minor;
-  int gl_version;
+typedef struct _GdkGLContextPrivate GdkGLContextPrivate;
+
+struct _GdkGLContextPrivate
+{
+  GdkGLVersion required;
+  GdkGLVersion gl_version;
+
+  GdkGLMemoryFlags memory_flags[GDK_MEMORY_N_FORMATS];
 
   guint has_khr_debug : 1;
   guint use_khr_debug : 1;
   guint has_half_float : 1;
+  guint has_sync : 1;
   guint has_unpack_subimage : 1;
   guint has_debug_output : 1;
+  guint has_bgra : 1;
   guint extensions_checked : 1;
   guint debug_enabled : 1;
   guint forward_compatible : 1;
@@ -120,7 +133,7 @@ typedef struct {
   EGLContext egl_context;
   EGLBoolean (*eglSwapBuffersWithDamage) (EGLDisplay, EGLSurface, const EGLint *, EGLint);
 #endif
-} GdkGLContextPrivate;
+};
 
 enum {
   PROP_0,
@@ -170,12 +183,8 @@ static GPrivate thread_current_context = G_PRIVATE_INIT (unref_unmasked);
 static void
 gdk_gl_context_clear_old_updated_area (GdkGLContext *context)
 {
-  int i;
-
-  for (i = 0; i < 2; i++)
-    {
-      g_clear_pointer (&context->old_updated_area[i], cairo_region_destroy);
-    }
+  for (unsigned int i = 0; i < GDK_GL_MAX_TRACKED_BUFFERS; i++)
+    g_clear_pointer (&context->old_updated_area[i], cairo_region_destroy);
 }
 
 static void
@@ -285,8 +294,11 @@ gdk_gl_context_create_egl_context (GdkGLContext *context,
   EGLConfig egl_config;
   EGLContext ctx;
   EGLint context_attribs[N_EGL_ATTRS], i = 0, flags = 0;
+  gsize major_idx, minor_idx;
   gboolean debug_bit, forward_bit;
-  int min_major, min_minor, major = 0, minor = 0;
+  GdkGLVersion version;
+  const GdkGLVersion* supported_versions;
+  gsize j;
   G_GNUC_UNUSED gint64 start_time = GDK_PROFILER_CURRENT_TIME;
 
   if (!gdk_gl_context_is_api_allowed (context, api, NULL))
@@ -294,12 +306,7 @@ gdk_gl_context_create_egl_context (GdkGLContext *context,
 
   /* We will use the default version matching the context status
    * unless the user requested a version which makes sense */
-  gdk_gl_context_get_matching_version (api, legacy,
-                                       display->have_egl_win32_libangle,
-                                       &min_major, &min_minor);
-  gdk_gl_context_get_clipped_version (context,
-                                      min_major, min_minor,
-                                      &major, &minor);
+  gdk_gl_context_get_matching_version (context, api, legacy, &version);
 
   if (!eglBindAPI (gdk_api_to_egl_api (api)))
     return 0;
@@ -330,9 +337,9 @@ gdk_gl_context_create_egl_context (GdkGLContext *context,
     flags &= ~EGL_CONTEXT_OPENGL_FORWARD_COMPATIBLE_BIT_KHR;
 
   context_attribs[i++] = EGL_CONTEXT_MAJOR_VERSION;
-  context_attribs[i++] = major;
+  major_idx = i++;
   context_attribs[i++] = EGL_CONTEXT_MINOR_VERSION;
-  context_attribs[i++] = minor;
+  minor_idx = i++;
   context_attribs[i++] = EGL_CONTEXT_FLAGS_KHR;
   context_attribs[i++] = flags;
 
@@ -341,23 +348,34 @@ gdk_gl_context_create_egl_context (GdkGLContext *context,
 
   GDK_DISPLAY_DEBUG (display, OPENGL,
                      "Creating EGL context version %d.%d (debug:%s, forward:%s, legacy:%s, es:%s)",
-                     major, minor,
+                     gdk_gl_version_get_major (&version), gdk_gl_version_get_minor (&version),
                      debug_bit ? "yes" : "no",
                      forward_bit ? "yes" : "no",
                      legacy ? "yes" : "no",
                      api == GDK_GL_API_GLES ? "yes" : "no");
 
-  ctx = eglCreateContext (egl_display,
-                          egl_config,
-                          share ? share_priv->egl_context : EGL_NO_CONTEXT,
-                          context_attribs);
+  supported_versions = gdk_gl_versions_get_for_api (api);
+  ctx = EGL_NO_CONTEXT;
+  for (j = 0; gdk_gl_version_greater_equal (&supported_versions[j], &version); j++)
+    {
+      context_attribs [major_idx] = gdk_gl_version_get_major (&supported_versions[j]);
+      context_attribs [minor_idx] = gdk_gl_version_get_minor (&supported_versions[j]);
 
-  if (ctx == NULL)
-      return 0;
+      ctx = eglCreateContext (egl_display,
+                              egl_config,
+                              share ? share_priv->egl_context : EGL_NO_CONTEXT,
+                              context_attribs);
+      if (ctx != EGL_NO_CONTEXT)
+        break;
+    }
+
+  if (ctx == EGL_NO_CONTEXT)
+    return 0;
 
   GDK_DISPLAY_DEBUG (display, OPENGL, "Created EGL context[%p]", ctx);
 
   priv->egl_context = ctx;
+  gdk_gl_context_set_version (context, &supported_versions[j]);
   gdk_gl_context_set_is_legacy (context, legacy);
 
   if (epoxy_has_egl_extension (egl_display, "EGL_KHR_swap_buffers_with_damage"))
@@ -365,7 +383,7 @@ gdk_gl_context_create_egl_context (GdkGLContext *context,
   else if (epoxy_has_egl_extension (egl_display, "EGL_EXT_swap_buffers_with_damage"))
     priv->eglSwapBuffersWithDamage = (gpointer) epoxy_eglGetProcAddress ("eglSwapBuffersWithDamageEXT");
 
-  gdk_profiler_end_mark (start_time, "realize GdkWaylandGLContext", NULL);
+  gdk_profiler_end_mark (start_time, "Create EGL context", NULL);
 
   return api;
 }
@@ -376,17 +394,24 @@ gdk_gl_context_realize_egl (GdkGLContext  *context,
 {
   GdkDisplay *display = gdk_gl_context_get_display (context);
   GdkGLContext *share = gdk_display_get_gl_context (display);
+  GdkDebugFlags flags;
   GdkGLAPI api, preferred_api;
   gboolean prefer_legacy;
+
+  flags = gdk_display_get_debug_flags(display);
 
   if (share && gdk_gl_context_is_api_allowed (context,
                                               gdk_gl_context_get_api (share),
                                               NULL))
     preferred_api = gdk_gl_context_get_api (share);
-  else if (gdk_gl_context_is_api_allowed (context, GDK_GL_API_GL, NULL))
+  else if ((flags & GDK_DEBUG_GL_PREFER_GL) != 0 &&
+           gdk_gl_context_is_api_allowed (context, GDK_GL_API_GL, NULL))
     preferred_api = GDK_GL_API_GL;
   else if (gdk_gl_context_is_api_allowed (context, GDK_GL_API_GLES, NULL))
     preferred_api = GDK_GL_API_GLES;
+  else if ((flags & GDK_DEBUG_GL_PREFER_GL) == 0 &&
+            gdk_gl_context_is_api_allowed (context, GDK_GL_API_GL, NULL))
+    preferred_api = GDK_GL_API_GL;
   else
     {
       g_set_error_literal (error, GDK_GL_ERROR,
@@ -395,8 +420,7 @@ gdk_gl_context_realize_egl (GdkGLContext  *context,
       return 0;
     }
 
-  prefer_legacy = (gdk_display_get_debug_flags(display) & GDK_DEBUG_GL_LEGACY) ||
-                   (share != NULL && gdk_gl_context_is_legacy (share));
+  prefer_legacy = share != NULL && gdk_gl_context_is_legacy (share);
 
   if (preferred_api == GDK_GL_API_GL)
     {
@@ -455,29 +479,26 @@ gdk_gl_context_real_get_damage (GdkGLContext *context)
       eglQuerySurface (gdk_display_get_egl_display (display), egl_surface,
                        EGL_BUFFER_AGE_EXT, &buffer_age);
 
-      switch (buffer_age)
+      if (buffer_age > 0 && buffer_age <= GDK_GL_MAX_TRACKED_BUFFERS)
         {
-          case 1:
-            return cairo_region_create ();
-            break;
+          cairo_region_t *damage = cairo_region_create ();
+          int i;
 
-          case 2:
-            if (context->old_updated_area[0])
-              return cairo_region_copy (context->old_updated_area[0]);
-            break;
+          for (i = 0; i < buffer_age - 1; i++)
+            {
+              if (context->old_updated_area[i] == NULL)
+                {
+                  cairo_region_create_rectangle (&(GdkRectangle) {
+                                                     0, 0,
+                                                     gdk_surface_get_width (surface),
+                                                     gdk_surface_get_height (surface)
+                                                 });
+                  break;
+                }
+              cairo_region_union (damage, context->old_updated_area[i]);
+            }
 
-          case 3:
-            if (context->old_updated_area[0] &&
-                context->old_updated_area[1])
-              {
-                cairo_region_t *damage = cairo_region_copy (context->old_updated_area[0]);
-                cairo_region_union (damage, context->old_updated_area[1]);
-                return damage;
-              }
-            break;
-
-          default:
-            ;
+          return damage;
         }
     }
 #endif
@@ -558,36 +579,58 @@ gdk_gl_context_real_make_current (GdkGLContext *context,
 #endif
 }
 
+double
+gdk_gl_context_get_scale (GdkGLContext *self)
+{
+  GdkDisplay *display;
+  GdkSurface *surface;
+  double scale;
+
+  surface = gdk_draw_context_get_surface (GDK_DRAW_CONTEXT (self));
+  scale = gdk_surface_get_scale (surface);
+
+  display = gdk_gl_context_get_display (self);
+  if (gdk_display_get_debug_flags (display) & GDK_DEBUG_GL_NO_FRACTIONAL)
+    scale = ceil (scale);
+
+  return scale;
+}
+
 static void
 gdk_gl_context_real_begin_frame (GdkDrawContext *draw_context,
-                                 gboolean        prefers_high_depth,
+                                 GdkMemoryDepth  depth,
                                  cairo_region_t *region)
 {
   GdkGLContext *context = GDK_GL_CONTEXT (draw_context);
   G_GNUC_UNUSED GdkGLContextPrivate *priv = gdk_gl_context_get_instance_private (context);
   GdkSurface *surface;
   cairo_region_t *damage;
+  double scale;
   int ww, wh;
+  int i;
 
   surface = gdk_draw_context_get_surface (draw_context);
+  scale = gdk_gl_context_get_scale (context);
 
 #ifdef HAVE_EGL
   if (priv->egl_context)
-    gdk_surface_ensure_egl_surface (surface, prefers_high_depth);
+    gdk_surface_ensure_egl_surface (surface, depth != GDK_MEMORY_U8);
 #endif
 
   damage = GDK_GL_CONTEXT_GET_CLASS (context)->get_damage (context);
 
-  if (context->old_updated_area[1])
-    cairo_region_destroy (context->old_updated_area[1]);
-  context->old_updated_area[1] = context->old_updated_area[0];
+  g_clear_pointer (&context->old_updated_area[GDK_GL_MAX_TRACKED_BUFFERS - 1], cairo_region_destroy);
+  for (i = GDK_GL_MAX_TRACKED_BUFFERS - 1; i > 0; i--)
+    {
+      context->old_updated_area[i] = context->old_updated_area[i - 1];
+    }
   context->old_updated_area[0] = cairo_region_copy (region);
 
   cairo_region_union (region, damage);
   cairo_region_destroy (damage);
 
-  ww = gdk_surface_get_width (surface) * gdk_surface_get_scale_factor (surface);
-  wh = gdk_surface_get_height (surface) * gdk_surface_get_scale_factor (surface);
+  ww = (int) ceil (gdk_surface_get_width (surface) * scale);
+  wh = (int) ceil (gdk_surface_get_height (surface) * scale);
 
   gdk_gl_context_make_current (context);
 
@@ -600,7 +643,7 @@ gdk_gl_context_real_begin_frame (GdkDrawContext *draw_context,
   glViewport (0, 0, ww, wh);
 
 #ifdef HAVE_EGL
-  if (priv->egl_context && gdk_gl_context_check_version (context, 0, 0, 3, 0))
+  if (priv->egl_context && gdk_gl_context_check_version (context, NULL, "3.0"))
     glDrawBuffers (1, (GLenum[1]) { gdk_gl_context_get_use_es (context) ? GL_BACK : GL_BACK_LEFT });
 #endif
 }
@@ -623,7 +666,7 @@ gdk_gl_context_real_end_frame (GdkDrawContext *draw_context,
 
   egl_surface = gdk_surface_get_egl_surface (surface);
 
-  gdk_profiler_add_mark (GDK_PROFILER_CURRENT_TIME, 0, "EGL", "swap buffers");
+  gdk_profiler_add_mark (GDK_PROFILER_CURRENT_TIME, 0, "EGL swap buffers", NULL);
 
   if (priv->eglSwapBuffersWithDamage)
     {
@@ -631,7 +674,7 @@ gdk_gl_context_real_end_frame (GdkDrawContext *draw_context,
       EGLint *heap_rects = NULL;
       int i, j, n_rects = cairo_region_num_rectangles (painted);
       int surface_height = gdk_surface_get_height (surface);
-      int scale = gdk_surface_get_scale_factor (surface);
+      double scale = gdk_gl_context_get_scale (context);
       EGLint *rects;
 
       if (n_rects < G_N_ELEMENTS (stack_rects) / 4)
@@ -644,10 +687,10 @@ gdk_gl_context_real_end_frame (GdkDrawContext *draw_context,
           cairo_rectangle_int_t rect;
 
           cairo_region_get_rectangle (painted, i, &rect);
-          rects[j++] = rect.x * scale;
-          rects[j++] = (surface_height - rect.height - rect.y) * scale;
-          rects[j++] = rect.width * scale;
-          rects[j++] = rect.height * scale;
+          rects[j++] = (int) floor (rect.x * scale);
+          rects[j++] = (int) floor ((surface_height - rect.height - rect.y) * scale);
+          rects[j++] = (int) ceil (rect.width * scale);
+          rects[j++] = (int) ceil (rect.height * scale);
         }
       priv->eglSwapBuffersWithDamage (gdk_display_get_egl_display (display), egl_surface, rects, n_rects);
       g_free (heap_rects);
@@ -966,45 +1009,33 @@ gdk_gl_context_get_forward_compatible (GdkGLContext *context)
 }
 
 void
-gdk_gl_context_get_matching_version (GdkGLAPI  api,
-                                     gboolean  legacy,
-                                     gboolean  win32_libangle,
-                                     int      *major,
-                                     int      *minor)
+gdk_gl_context_get_matching_version (GdkGLContext *context,
+                                     GdkGLAPI      api,
+                                     gboolean      legacy,
+                                     GdkGLVersion *out_version)
 {
-  int maj, min;
+  GdkGLContextPrivate *priv = gdk_gl_context_get_instance_private (context);
+  GdkGLVersion min_version;
+
+  g_return_if_fail (GDK_IS_GL_CONTEXT (context));
 
   if (api == GDK_GL_API_GL)
     {
       if (legacy)
-        {
-          maj = GDK_GL_MIN_GL_LEGACY_VERSION_MAJOR;
-          min = GDK_GL_MIN_GL_LEGACY_VERSION_MINOR;
-        }
+        min_version = GDK_GL_MIN_GL_LEGACY_VERSION;
       else
-        {
-          maj = GDK_GL_MIN_GL_VERSION_MAJOR;
-          min = GDK_GL_MIN_GL_VERSION_MINOR;
-        }
+        min_version = GDK_GL_MIN_GL_VERSION;
     }
   else
     {
-      if (win32_libangle)
-        {
-          maj = GDK_GL_MIN_GLES_WIN32_ANGLE_VERSION_MAJOR;
-          min = GDK_GL_MIN_GLES_WIN32_ANGLE_VERSION_MINOR;
-        }
-      else
-        {
-          maj = GDK_GL_MIN_GLES_VERSION_MAJOR;
-          min = GDK_GL_MIN_GLES_VERSION_MINOR;
-        }
+      min_version = GDK_GL_MIN_GLES_VERSION;
     }
 
-  if (major != NULL)
-    *major = maj;
-  if (minor != NULL)
-    *minor = min;
+  if (gdk_gl_version_greater_equal (&priv->required, &min_version))
+    *out_version = priv->required;
+  else
+    *out_version = min_version;
+
 }
 
 /**
@@ -1033,22 +1064,17 @@ gdk_gl_context_set_required_version (GdkGLContext *context,
   g_return_if_fail (GDK_IS_GL_CONTEXT (context));
   g_return_if_fail (!gdk_gl_context_is_realized (context));
 
-  priv->major = major;
-  priv->minor = minor;
+  priv->required = GDK_GL_VERSION_INIT (major, minor);
 }
 
 gboolean
-gdk_gl_context_check_version (GdkGLContext *self,
-                              int           required_gl_major,
-                              int           required_gl_minor,
-                              int           required_gles_major,
-                              int           required_gles_minor)
+gdk_gl_context_check_gl_version (GdkGLContext       *self,
+                                 const GdkGLVersion *required_gl,
+                                 const GdkGLVersion *required_gles)
 {
   GdkGLContextPrivate *priv = gdk_gl_context_get_instance_private (self);
 
   g_return_val_if_fail (GDK_IS_GL_CONTEXT (self), FALSE);
-  g_return_val_if_fail (required_gl_minor < 10, FALSE);
-  g_return_val_if_fail (required_gles_minor < 10, FALSE);
 
   if (!gdk_gl_context_is_realized (self))
     return FALSE;
@@ -1056,10 +1082,10 @@ gdk_gl_context_check_version (GdkGLContext *self,
   switch (priv->api)
     {
     case GDK_GL_API_GL:
-      return priv->gl_version >= required_gl_major * 10 + required_gl_minor;
+      return required_gl == NULL || gdk_gl_version_greater_equal (&priv->gl_version, required_gl);
 
     case GDK_GL_API_GLES:
-      return priv->gl_version >= required_gles_major * 10 + required_gles_minor;
+      return required_gles == NULL || gdk_gl_version_greater_equal (&priv->gl_version, required_gles);
 
     default:
       g_return_val_if_reached (FALSE);
@@ -1090,33 +1116,9 @@ gdk_gl_context_get_required_version (GdkGLContext *context,
   g_return_if_fail (GDK_IS_GL_CONTEXT (context));
 
   if (major != NULL)
-    *major = priv->major;
+    *major = gdk_gl_version_get_major (&priv->required);
   if (minor != NULL)
-    *minor = priv->minor;
-}
-
-void
-gdk_gl_context_get_clipped_version (GdkGLContext *context,
-                                    int           min_major,
-                                    int           min_minor,
-                                    int          *major,
-                                    int          *minor)
-{
-  GdkGLContextPrivate *priv = gdk_gl_context_get_instance_private (context);
-  int maj = min_major, min = min_minor;
-
-  g_return_if_fail (GDK_IS_GL_CONTEXT (context));
-
-  if (priv->major > maj || (priv->major == maj && priv->minor > min))
-    {
-      maj = priv->major;
-      min = priv->minor;
-    }
-
-  if (major != NULL)
-    *major = maj;
-  if (minor != NULL)
-    *minor = min;
+    *minor = gdk_gl_version_get_minor (&priv->required);
 }
 
 /**
@@ -1151,6 +1153,15 @@ gdk_gl_context_is_legacy (GdkGLContext *context)
   g_return_val_if_fail (gdk_gl_context_is_realized (context), FALSE);
 
   return priv->is_legacy;
+}
+
+void
+gdk_gl_context_set_version (GdkGLContext       *context,
+                            const GdkGLVersion *version)
+{
+  GdkGLContextPrivate *priv = gdk_gl_context_get_instance_private (context);
+
+  priv->gl_version = *version;
 }
 
 void
@@ -1277,18 +1288,38 @@ gdk_gl_context_is_api_allowed (GdkGLContext  *self,
                                GError       **error)
 {
   GdkGLContextPrivate *priv = gdk_gl_context_get_instance_private (self);
+  GdkDebugFlags flags;
+  GdkGLAPI allowed_apis;
 
-  if (gdk_display_get_debug_flags (gdk_gl_context_get_display (self)) & GDK_DEBUG_GL_GLES)
+  allowed_apis = priv->allowed_apis;
+
+  flags = gdk_display_get_debug_flags (gdk_gl_context_get_display (self));
+
+  if (flags & GDK_DEBUG_GL_DISABLE_GLES)
     {
-      if (!(api & GDK_GL_API_GLES))
+      if (api == GDK_GL_API_GLES)
         {
           g_set_error_literal (error, GDK_GL_ERROR, GDK_GL_ERROR_NOT_AVAILABLE,
-                               _("Anything but OpenGL ES disabled via GDK_DEBUG"));
+                               _("OpenGL ES disabled via GDK_DEBUG"));
           return FALSE;
         }
+
+      allowed_apis &= ~GDK_GL_API_GLES;
     }
 
-  if (priv->allowed_apis & api)
+  if (flags & GDK_DEBUG_GL_DISABLE_GL)
+    {
+      if (api == GDK_GL_API_GL)
+        {
+          g_set_error_literal (error, GDK_GL_ERROR, GDK_GL_ERROR_NOT_AVAILABLE,
+                               _("OpenGL disabled via GDK_DEBUG"));
+          return FALSE;
+        }
+
+      allowed_apis &= ~GDK_GL_API_GL;
+    }
+
+  if (allowed_apis & api)
     return TRUE;
 
   g_set_error (error, GDK_GL_ERROR, GDK_GL_ERROR_NOT_AVAILABLE,
@@ -1488,9 +1519,148 @@ gdk_gl_context_realize (GdkGLContext  *context,
   priv->api = GDK_GL_CONTEXT_GET_CLASS (context)->realize (context, error);
 
   if (priv->api)
-    g_object_notify_by_pspec (G_OBJECT (context), properties[PROP_API]);
+    {
+      g_assert (gdk_gl_version_greater_equal (&priv->gl_version, &GDK_GL_VERSION_INIT (0, 0)));
+
+      g_object_notify_by_pspec (G_OBJECT (context), properties[PROP_API]);
+    }
 
   return priv->api;
+}
+
+static void
+gdk_gl_context_init_memory_flags (GdkGLContext *self)
+{
+  GdkGLContextPrivate *priv = gdk_gl_context_get_instance_private (self);
+  gsize i;
+
+  if (!gdk_gl_context_get_use_es (self))
+    {
+      for (i = 0; i < G_N_ELEMENTS (priv->memory_flags); i++)
+        {
+          priv->memory_flags[i] = GDK_GL_FORMAT_USABLE | GDK_GL_FORMAT_RENDERABLE | GDK_GL_FORMAT_FILTERABLE;
+        }
+      return;
+    }
+
+  /* GLES 2.0 spec, tables 3.2 and 3.3 */
+  priv->memory_flags[GDK_MEMORY_R8G8B8] = GDK_GL_FORMAT_USABLE | GDK_GL_FORMAT_FILTERABLE;
+  priv->memory_flags[GDK_MEMORY_R8G8B8A8_PREMULTIPLIED] = GDK_GL_FORMAT_USABLE | GDK_GL_FORMAT_FILTERABLE;
+  priv->memory_flags[GDK_MEMORY_R8G8B8A8] = GDK_GL_FORMAT_USABLE | GDK_GL_FORMAT_FILTERABLE;
+#if 0
+  /* GLES2 can do these, but GTK can't */
+  priv->memory_flags[GDK_MEMORY_A8] = GDK_GL_FORMAT_USABLE | GDK_GL_FORMAT_FILTERABLE;
+  priv->memory_flags[GDK_MEMORY_G8] = GDK_GL_FORMAT_USABLE | GDK_GL_FORMAT_FILTERABLE;
+  priv->memory_flags[GDK_MEMORY_G8A8_PREMULTIPLIED] = GDK_GL_FORMAT_USABLE | GDK_GL_FORMAT_FILTERABLE;
+  priv->memory_flags[GDK_MEMORY_G8A8] = GDK_GL_FORMAT_USABLE | GDK_GL_FORMAT_FILTERABLE;
+#endif
+
+  if (gdk_gl_version_greater_equal (&priv->gl_version, &GDK_GL_VERSION_INIT (3, 0)))
+    {
+      /* GLES 3.0.6 spec, table 3.13 */
+      priv->memory_flags[GDK_MEMORY_G8] |= GDK_GL_FORMAT_USABLE | GDK_GL_FORMAT_RENDERABLE | GDK_GL_FORMAT_FILTERABLE;
+      priv->memory_flags[GDK_MEMORY_A8] |= GDK_GL_FORMAT_USABLE | GDK_GL_FORMAT_RENDERABLE | GDK_GL_FORMAT_FILTERABLE;
+      priv->memory_flags[GDK_MEMORY_G8A8_PREMULTIPLIED] |= GDK_GL_FORMAT_USABLE | GDK_GL_FORMAT_RENDERABLE | GDK_GL_FORMAT_FILTERABLE;
+      priv->memory_flags[GDK_MEMORY_G8A8] |= GDK_GL_FORMAT_USABLE | GDK_GL_FORMAT_RENDERABLE | GDK_GL_FORMAT_FILTERABLE;
+      priv->memory_flags[GDK_MEMORY_R8G8B8] |= GDK_GL_FORMAT_USABLE | GDK_GL_FORMAT_RENDERABLE | GDK_GL_FORMAT_FILTERABLE;
+      priv->memory_flags[GDK_MEMORY_R8G8B8A8_PREMULTIPLIED] |= GDK_GL_FORMAT_USABLE | GDK_GL_FORMAT_RENDERABLE | GDK_GL_FORMAT_FILTERABLE;
+      priv->memory_flags[GDK_MEMORY_R8G8B8A8] |= GDK_GL_FORMAT_USABLE | GDK_GL_FORMAT_RENDERABLE | GDK_GL_FORMAT_FILTERABLE;
+      priv->memory_flags[GDK_MEMORY_R8G8B8X8] |= GDK_GL_FORMAT_USABLE | GDK_GL_FORMAT_RENDERABLE | GDK_GL_FORMAT_FILTERABLE;
+      priv->memory_flags[GDK_MEMORY_R16G16B16_FLOAT] |= GDK_GL_FORMAT_USABLE | GDK_GL_FORMAT_FILTERABLE;
+      priv->memory_flags[GDK_MEMORY_R16G16B16A16_FLOAT_PREMULTIPLIED] |= GDK_GL_FORMAT_USABLE | GDK_GL_FORMAT_FILTERABLE;
+      priv->memory_flags[GDK_MEMORY_R16G16B16A16_FLOAT] |= GDK_GL_FORMAT_USABLE | GDK_GL_FORMAT_FILTERABLE;
+      priv->memory_flags[GDK_MEMORY_A16_FLOAT] |= GDK_GL_FORMAT_USABLE | GDK_GL_FORMAT_FILTERABLE;
+      priv->memory_flags[GDK_MEMORY_R32G32B32_FLOAT] |= GDK_GL_FORMAT_USABLE;
+      priv->memory_flags[GDK_MEMORY_R32G32B32A32_FLOAT_PREMULTIPLIED] |= GDK_GL_FORMAT_USABLE;
+      priv->memory_flags[GDK_MEMORY_R32G32B32A32_FLOAT] |= GDK_GL_FORMAT_USABLE;
+      priv->memory_flags[GDK_MEMORY_A32_FLOAT] |= GDK_GL_FORMAT_USABLE;
+
+      /* no changes in GLES 3.1 spec, table 8.13 */
+
+      if (gdk_gl_version_greater_equal (&priv->gl_version, &GDK_GL_VERSION_INIT (3, 2)))
+        {
+          /* GLES 3.2 spec, table 8.10 */
+          priv->memory_flags[GDK_MEMORY_R16G16B16A16_FLOAT_PREMULTIPLIED] |= GDK_GL_FORMAT_RENDERABLE;
+          priv->memory_flags[GDK_MEMORY_R16G16B16A16_FLOAT] |= GDK_GL_FORMAT_RENDERABLE;
+          priv->memory_flags[GDK_MEMORY_A16_FLOAT] |= GDK_GL_FORMAT_RENDERABLE;
+          priv->memory_flags[GDK_MEMORY_R32G32B32A32_FLOAT_PREMULTIPLIED] |= GDK_GL_FORMAT_RENDERABLE;
+          priv->memory_flags[GDK_MEMORY_R32G32B32A32_FLOAT] |= GDK_GL_FORMAT_RENDERABLE;
+          priv->memory_flags[GDK_MEMORY_A32_FLOAT] |= GDK_GL_FORMAT_RENDERABLE;
+        }
+    }
+
+  if (epoxy_has_gl_extension ("GL_OES_rgb8_rgba8"))
+    {
+      priv->memory_flags[GDK_MEMORY_R8G8B8A8_PREMULTIPLIED] |= GDK_GL_FORMAT_USABLE | GDK_GL_FORMAT_RENDERABLE | GDK_GL_FORMAT_FILTERABLE;
+      priv->memory_flags[GDK_MEMORY_R8G8B8A8] |= GDK_GL_FORMAT_USABLE | GDK_GL_FORMAT_RENDERABLE | GDK_GL_FORMAT_FILTERABLE;
+      priv->memory_flags[GDK_MEMORY_R8G8B8] |= GDK_GL_FORMAT_USABLE | GDK_GL_FORMAT_RENDERABLE | GDK_GL_FORMAT_FILTERABLE;
+      if (gdk_gl_version_greater_equal (&priv->gl_version, &GDK_GL_VERSION_INIT (3, 0)))
+        priv->memory_flags[GDK_MEMORY_R8G8B8X8] |= GDK_GL_FORMAT_USABLE | GDK_GL_FORMAT_RENDERABLE | GDK_GL_FORMAT_FILTERABLE;
+    }
+  if (epoxy_has_gl_extension ("GL_EXT_abgr"))
+    {
+      priv->memory_flags[GDK_MEMORY_A8B8G8R8_PREMULTIPLIED] |= GDK_GL_FORMAT_USABLE | GDK_GL_FORMAT_RENDERABLE | GDK_GL_FORMAT_FILTERABLE;
+      priv->memory_flags[GDK_MEMORY_A8B8G8R8] |= GDK_GL_FORMAT_USABLE | GDK_GL_FORMAT_RENDERABLE | GDK_GL_FORMAT_FILTERABLE;
+      if (gdk_gl_version_greater_equal (&priv->gl_version, &GDK_GL_VERSION_INIT (3, 0)))
+        priv->memory_flags[GDK_MEMORY_X8B8G8R8] |= GDK_GL_FORMAT_USABLE | GDK_GL_FORMAT_RENDERABLE | GDK_GL_FORMAT_FILTERABLE;
+    }
+  if (epoxy_has_gl_extension ("GL_EXT_texture_format_BGRA8888"))
+    {
+      priv->memory_flags[GDK_MEMORY_B8G8R8A8_PREMULTIPLIED] |= GDK_GL_FORMAT_USABLE | GDK_GL_FORMAT_RENDERABLE | GDK_GL_FORMAT_FILTERABLE;
+      priv->memory_flags[GDK_MEMORY_B8G8R8A8] |= GDK_GL_FORMAT_USABLE | GDK_GL_FORMAT_RENDERABLE | GDK_GL_FORMAT_FILTERABLE;
+      if (gdk_gl_version_greater_equal (&priv->gl_version, &GDK_GL_VERSION_INIT (3, 0)))
+        priv->memory_flags[GDK_MEMORY_B8G8R8X8] |= GDK_GL_FORMAT_USABLE | GDK_GL_FORMAT_RENDERABLE | GDK_GL_FORMAT_FILTERABLE;
+    }
+
+  /* Technically, those extensions are supported on GLES2.
+   * However, GTK uses the wrong format/type pairs with them, so we don't enable them.
+   */
+  if (gdk_gl_version_greater_equal (&priv->gl_version, &GDK_GL_VERSION_INIT (3, 0)))
+    {
+      if (epoxy_has_gl_extension ("GL_EXT_texture_norm16"))
+        {
+          priv->memory_flags[GDK_MEMORY_R16G16B16A16_PREMULTIPLIED] |= GDK_GL_FORMAT_USABLE | GDK_GL_FORMAT_RENDERABLE | GDK_GL_FORMAT_FILTERABLE;
+          priv->memory_flags[GDK_MEMORY_R16G16B16A16] |= GDK_GL_FORMAT_USABLE | GDK_GL_FORMAT_RENDERABLE | GDK_GL_FORMAT_FILTERABLE;
+          priv->memory_flags[GDK_MEMORY_R16G16B16] |= GDK_GL_FORMAT_USABLE | GDK_GL_FORMAT_FILTERABLE;
+          priv->memory_flags[GDK_MEMORY_G16A16_PREMULTIPLIED] |= GDK_GL_FORMAT_USABLE | GDK_GL_FORMAT_RENDERABLE | GDK_GL_FORMAT_FILTERABLE;
+          priv->memory_flags[GDK_MEMORY_G16A16] |= GDK_GL_FORMAT_USABLE | GDK_GL_FORMAT_RENDERABLE | GDK_GL_FORMAT_FILTERABLE;
+          priv->memory_flags[GDK_MEMORY_G16] |= GDK_GL_FORMAT_USABLE | GDK_GL_FORMAT_RENDERABLE | GDK_GL_FORMAT_FILTERABLE;
+          priv->memory_flags[GDK_MEMORY_A16] |= GDK_GL_FORMAT_USABLE | GDK_GL_FORMAT_RENDERABLE | GDK_GL_FORMAT_FILTERABLE;
+        }
+      if (epoxy_has_gl_extension ("GL_OES_texture_half_float"))
+        {
+          GdkGLMemoryFlags flags = GDK_GL_FORMAT_USABLE;
+          if (epoxy_has_gl_extension ("GL_EXT_color_buffer_half_float"))
+            flags |= GDK_GL_FORMAT_RENDERABLE;
+          if (epoxy_has_gl_extension ("GL_OES_texture_half_float_linear"))
+            flags |= GDK_GL_FORMAT_FILTERABLE;
+          priv->memory_flags[GDK_MEMORY_R16G16B16A16_FLOAT_PREMULTIPLIED] |= flags;
+          priv->memory_flags[GDK_MEMORY_R16G16B16A16_FLOAT] |= flags;
+          /* disabled for now, see https://gitlab.freedesktop.org/mesa/mesa/-/issues/10378 */
+          priv->memory_flags[GDK_MEMORY_R16G16B16_FLOAT] |= flags & ~GDK_GL_FORMAT_RENDERABLE;
+          priv->memory_flags[GDK_MEMORY_A16_FLOAT] |= flags;
+        }
+      if (epoxy_has_gl_extension ("GL_OES_texture_float"))
+        {
+          GdkGLMemoryFlags flags = GDK_GL_FORMAT_USABLE;
+          if (epoxy_has_gl_extension ("GL_EXT_color_buffer_float"))
+            flags |= GDK_GL_FORMAT_RENDERABLE;
+          if (epoxy_has_gl_extension ("GL_OES_texture_float_linear"))
+            flags |= GDK_GL_FORMAT_FILTERABLE;
+          priv->memory_flags[GDK_MEMORY_R32G32B32A32_FLOAT_PREMULTIPLIED] |= flags;
+          priv->memory_flags[GDK_MEMORY_R32G32B32A32_FLOAT] |= flags;
+          priv->memory_flags[GDK_MEMORY_R32G32B32_FLOAT] |= flags & ~GDK_GL_FORMAT_RENDERABLE;
+          priv->memory_flags[GDK_MEMORY_A32_FLOAT] |= flags;
+        }
+    }
+}
+
+void
+gdk_gl_version_init_epoxy (GdkGLVersion *version)
+{
+  int epoxy_version = epoxy_gl_version ();
+
+  *version = GDK_GL_VERSION_INIT (epoxy_version / 10, epoxy_version % 10);
 }
 
 static void
@@ -1505,8 +1675,6 @@ gdk_gl_context_check_extensions (GdkGLContext *context)
 
   if (priv->extensions_checked)
     return;
-
-  priv->gl_version = epoxy_gl_version ();
 
   priv->has_debug_output = epoxy_has_gl_extension ("GL_ARB_debug_output") ||
                            epoxy_has_gl_extension ("GL_KHR_debug");
@@ -1524,16 +1692,19 @@ gdk_gl_context_check_extensions (GdkGLContext *context)
 
   if (gdk_gl_context_get_use_es (context))
     {
-      priv->has_unpack_subimage = epoxy_has_gl_extension ("GL_EXT_unpack_subimage");
+      priv->has_unpack_subimage = gdk_gl_version_greater_equal (&priv->gl_version, &GDK_GL_VERSION_INIT (3, 0)) ||
+                                  epoxy_has_gl_extension ("GL_EXT_unpack_subimage");
       priv->has_khr_debug = epoxy_has_gl_extension ("GL_KHR_debug");
+      priv->has_bgra = epoxy_has_gl_extension ("GL_EXT_texture_format_BGRA8888");
     }
   else
     {
       priv->has_unpack_subimage = TRUE;
       priv->has_khr_debug = epoxy_has_gl_extension ("GL_KHR_debug");
+      priv->has_bgra = TRUE;
 
       /* We asked for a core profile, but we didn't get one, so we're in legacy mode */
-      if (priv->gl_version < 32)
+      if (!gdk_gl_version_greater_equal (&priv->gl_version, &GDK_GL_VERSION_INIT (3, 2)))
         priv->is_legacy = TRUE;
     }
 
@@ -1543,10 +1714,15 @@ gdk_gl_context_check_extensions (GdkGLContext *context)
       glGetIntegerv (GL_MAX_LABEL_LENGTH, &priv->max_debug_label_length);
     }
 
-  priv->has_half_float = gdk_gl_context_check_version (context, 3, 0, 3, 0) ||
-                         epoxy_has_gl_extension ("OES_vertex_half_float");
+  priv->has_half_float = gdk_gl_context_check_version (context, "3.0", "3.0") ||
+                         epoxy_has_gl_extension ("GL_OES_vertex_half_float");
 
-#ifdef G_ENABLE_DEBUG
+  priv->has_sync = gdk_gl_context_check_version (context, "3.2", "3.0") ||
+                   epoxy_has_gl_extension ("GL_ARB_sync") ||
+                   epoxy_has_gl_extension ("GL_APPLE_sync");
+
+  gdk_gl_context_init_memory_flags (context);
+
   {
     int max_texture_size;
     glGetIntegerv (GL_MAX_TEXTURE_SIZE, &max_texture_size);
@@ -1557,17 +1733,20 @@ gdk_gl_context_check_extensions (GdkGLContext *context)
                        "* Extensions checked:\n"
                        " - GL_KHR_debug: %s\n"
                        " - GL_EXT_unpack_subimage: %s\n"
-                       " - OES_vertex_half_float: %s",
+                       " - half float: %s\n"
+                       " - sync: %s\n"
+                       " - bgra: %s",
                        gdk_gl_context_get_use_es (context) ? "OpenGL ES" : "OpenGL",
-                       priv->gl_version / 10, priv->gl_version % 10,
+                       gdk_gl_version_get_major (&priv->gl_version), gdk_gl_version_get_minor (&priv->gl_version),
                        priv->is_legacy ? "legacy" : "core",
                        glGetString (GL_SHADING_LANGUAGE_VERSION),
                        max_texture_size,
                        priv->has_khr_debug ? "yes" : "no",
                        priv->has_unpack_subimage ? "yes" : "no",
-                       priv->has_half_float ? "yes" : "no");
+                       priv->has_half_float ? "yes" : "no",
+                       priv->has_sync ? "yes" : "no",
+                       priv->has_bgra ? "yes" : "no");
   }
-#endif
 
   priv->extensions_checked = TRUE;
 }
@@ -1687,10 +1866,6 @@ gdk_gl_context_get_shared_context (GdkGLContext *context)
  * Retrieves the OpenGL version of the @context.
  *
  * The @context must be realized prior to calling this function.
- *
- * If the @context has never been made current, the version cannot
- * be known and it will return 0 for both @major and @minor.
- *
  */
 void
 gdk_gl_context_get_version (GdkGLContext *context,
@@ -1703,9 +1878,59 @@ gdk_gl_context_get_version (GdkGLContext *context,
   g_return_if_fail (gdk_gl_context_is_realized (context));
 
   if (major != NULL)
-    *major = priv->gl_version / 10;
+    *major = gdk_gl_version_get_major (&priv->gl_version);
   if (minor != NULL)
-    *minor = priv->gl_version % 10;
+    *minor = gdk_gl_version_get_minor (&priv->gl_version);
+}
+
+const char *
+gdk_gl_context_get_glsl_version_string (GdkGLContext *self)
+{
+  GdkGLContextPrivate *priv = gdk_gl_context_get_instance_private (self);
+
+  if (priv->api == GDK_GL_API_GL)
+    {
+      if (gdk_gl_version_greater_equal (&priv->gl_version, &GDK_GL_VERSION_INIT (4, 6)))
+        return "#version 460";
+      else if (gdk_gl_version_greater_equal (&priv->gl_version, &GDK_GL_VERSION_INIT (4, 5)))
+        return "#version 450";
+      else if (gdk_gl_version_greater_equal (&priv->gl_version, &GDK_GL_VERSION_INIT (4, 4)))
+        return "#version 440";
+      else if (gdk_gl_version_greater_equal (&priv->gl_version, &GDK_GL_VERSION_INIT (4, 3)))
+        return "#version 430";
+      else if (gdk_gl_version_greater_equal (&priv->gl_version, &GDK_GL_VERSION_INIT (4, 2)))
+        return "#version 420";
+      else if (gdk_gl_version_greater_equal (&priv->gl_version, &GDK_GL_VERSION_INIT (4, 1)))
+        return "#version 410";
+      else if (gdk_gl_version_greater_equal (&priv->gl_version, &GDK_GL_VERSION_INIT (4, 0)))
+        return "#version 400";
+      else if (gdk_gl_version_greater_equal (&priv->gl_version, &GDK_GL_VERSION_INIT (3, 3)))
+        return "#version 330";
+      else if (gdk_gl_version_greater_equal (&priv->gl_version, &GDK_GL_VERSION_INIT (3, 2)))
+        return "#version 150";
+      else if (gdk_gl_version_greater_equal (&priv->gl_version, &GDK_GL_VERSION_INIT (3, 1)))
+        return "#version 140";
+      else
+        return "#version 130";
+    }
+  else if (priv->api == GDK_GL_API_GLES)
+    {
+      if (gdk_gl_version_greater_equal (&priv->gl_version, &GDK_GL_VERSION_INIT (3, 2)))
+        return "#version 320 es";
+      else if (gdk_gl_version_greater_equal (&priv->gl_version, &GDK_GL_VERSION_INIT (3, 1)))
+        return "#version 310 es";
+      else if (gdk_gl_version_greater_equal (&priv->gl_version, &GDK_GL_VERSION_INIT (3, 0)))
+        return "#version 300 es";
+      else if (gdk_gl_version_greater_equal (&priv->gl_version, &GDK_GL_VERSION_INIT (3, 0)))
+        return "#version 300 es";
+      else
+        return "#version 100";
+    }
+  else
+    {
+      /* must be realized to be called */
+      g_assert_not_reached ();
+    }
 }
 
 /**
@@ -1781,6 +2006,15 @@ gdk_gl_context_get_current (void)
   return context;
 }
 
+GdkGLMemoryFlags
+gdk_gl_context_get_format_flags (GdkGLContext    *self,
+                                 GdkMemoryFormat  format)
+{
+  GdkGLContextPrivate *priv = gdk_gl_context_get_instance_private (self);
+
+  return priv->memory_flags[format];
+}
+
 gboolean
 gdk_gl_context_has_debug (GdkGLContext *self)
 {
@@ -1795,6 +2029,35 @@ gdk_gl_context_has_vertex_half_float (GdkGLContext *self)
   GdkGLContextPrivate *priv = gdk_gl_context_get_instance_private (self);
 
   return priv->has_half_float;
+}
+
+gboolean
+gdk_gl_context_has_sync (GdkGLContext *self)
+{
+  GdkGLContextPrivate *priv = gdk_gl_context_get_instance_private (self);
+
+  return priv->has_sync;
+}
+
+/* Return if glGenVertexArrays, glBindVertexArray and glDeleteVertexArrays
+ * can be used
+ */
+gboolean
+gdk_gl_context_has_vertex_arrays (GdkGLContext *self)
+{
+  GdkGLContextPrivate *priv = gdk_gl_context_get_instance_private (self);
+
+  switch (priv->api)
+    {
+    case GDK_GL_API_GL:
+      return TRUE;
+
+    case GDK_GL_API_GLES:
+      return gdk_gl_version_get_major (&priv->gl_version) >= 3;
+
+    default:
+      g_return_val_if_reached (FALSE);
+    }
 }
 
 /* This is currently private! */
@@ -1876,4 +2139,218 @@ gdk_gl_backend_use (GdkGLBackend backend_type)
     }
 
   g_assert (the_gl_backend_type == backend_type);
+}
+
+static guint
+gdk_gl_context_import_dmabuf_for_target (GdkGLContext    *self,
+                                         int              width,
+                                         int              height,
+                                         const GdkDmabuf *dmabuf,
+                                         int              target)
+{
+#if defined(HAVE_EGL) && defined(HAVE_DMABUF)
+  GdkDisplay *display = gdk_gl_context_get_display (self);
+  EGLImage image;
+  guint texture_id;
+
+  image = gdk_dmabuf_egl_create_image (display,
+                                       width,
+                                       height,
+                                       dmabuf,
+                                       target);
+  if (image == EGL_NO_IMAGE)
+    return 0;
+
+  glGenTextures (1, &texture_id);
+  glBindTexture (target, texture_id);
+  glEGLImageTargetTexture2DOES (target, image);
+  glTexParameteri (target, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri (target, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+  eglDestroyImageKHR (gdk_display_get_egl_display (display), image);
+
+  return texture_id;
+#else
+  return 0;
+#endif
+}
+
+guint
+gdk_gl_context_import_dmabuf (GdkGLContext    *self,
+                              int              width,
+                              int              height,
+                              const GdkDmabuf *dmabuf,
+                              gboolean        *external)
+{
+  GdkDisplay *display = gdk_gl_context_get_display (self);
+  guint texture_id;
+
+  gdk_display_init_dmabuf (display);
+
+  if (!gdk_dmabuf_formats_contains (display->egl_external_formats, dmabuf->fourcc, dmabuf->modifier))
+    {
+      texture_id = gdk_gl_context_import_dmabuf_for_target (self,
+                                                            width, height,
+                                                            dmabuf,
+                                                            GL_TEXTURE_2D);
+      if (texture_id == 0)
+        {
+          GDK_DISPLAY_DEBUG (display, DMABUF,
+                             "Import of %dx%d %.4s:%#" G_GINT64_MODIFIER "x dmabuf failed",
+                             width, height,
+                             (char *) &dmabuf->fourcc, dmabuf->modifier);
+          return 0;
+        }
+
+      GDK_DISPLAY_DEBUG (display, DMABUF,
+                         "Imported %dx%d %.4s:%#" G_GINT64_MODIFIER "x dmabuf as GL_TEXTURE_2D texture",
+                         width, height,
+                         (char *) &dmabuf->fourcc, dmabuf->modifier);
+      *external = FALSE;
+      return texture_id;
+    }
+
+  if (!gdk_gl_context_get_use_es (self))
+    {
+      GDK_DISPLAY_DEBUG (display, DMABUF,
+                         "Can't import external_only %.4s:%#" G_GINT64_MODIFIER "x outside of GLES",
+                         (char *) &dmabuf->fourcc, dmabuf->modifier);
+      return 0;
+    }
+
+  texture_id = gdk_gl_context_import_dmabuf_for_target (self,
+                                                        width, height,
+                                                        dmabuf,
+                                                        GL_TEXTURE_EXTERNAL_OES);
+  if (texture_id == 0)
+    {
+      GDK_DISPLAY_DEBUG (display, DMABUF,
+                         "Import of external_only %dx%d %.4s:%#" G_GINT64_MODIFIER "x dmabuf failed",
+                         width, height,
+                         (char *) &dmabuf->fourcc, dmabuf->modifier);
+      return 0;
+    }
+
+  GDK_DISPLAY_DEBUG (display, DMABUF,
+                     "Imported %dx%d %.4s:%#" G_GINT64_MODIFIER "x dmabuf as GL_TEXTURE_EXTERNAL_OES texture",
+                     width, height,
+                     (char *) &dmabuf->fourcc, dmabuf->modifier);
+  *external = TRUE;
+  return texture_id;
+}
+
+gboolean
+gdk_gl_context_export_dmabuf (GdkGLContext *self,
+                              unsigned int  texture_id,
+                              GdkDmabuf    *dmabuf)
+{
+#if defined(HAVE_EGL) && defined(HAVE_DMABUF)
+  GdkGLContextPrivate *priv = gdk_gl_context_get_instance_private (self);
+  GdkDisplay *display = gdk_gl_context_get_display (self);
+  EGLDisplay egl_display = gdk_display_get_egl_display (display);
+  EGLContext egl_context = priv->egl_context;
+  EGLint attribs[10];
+  EGLImage image;
+  gboolean result = FALSE;
+  int i;
+  int fourcc;
+  int n_planes;
+  guint64 modifier;
+  int fds[GDK_DMABUF_MAX_PLANES];
+  int strides[GDK_DMABUF_MAX_PLANES];
+  int offsets[GDK_DMABUF_MAX_PLANES];
+
+  g_return_val_if_fail (GDK_IS_GL_CONTEXT (self), FALSE);
+  g_return_val_if_fail (texture_id > 0, FALSE);
+  g_return_val_if_fail (dmabuf != NULL, FALSE);
+
+  if (egl_display == EGL_NO_DISPLAY || !display->have_egl_dma_buf_export)
+    {
+      GDK_DISPLAY_DEBUG (display, DMABUF,
+                         "Can't export dmabufs from GL, missing EGL or EGL_EXT_image_dma_buf_export");
+      return 0;
+    }
+
+  GDK_DISPLAY_DEBUG (display, DMABUF, "Exporting GL texture to dmabuf");
+
+  i = 0;
+  attribs[i++] = EGL_IMAGE_PRESERVED_KHR;
+  attribs[i++] = EGL_TRUE;
+
+  attribs[i++] = EGL_NONE;
+
+  image = eglCreateImageKHR (egl_display,
+                             egl_context,
+                             EGL_GL_TEXTURE_2D_KHR,
+                             (EGLClientBuffer)GUINT_TO_POINTER (texture_id),
+                             attribs);
+
+  if (image == EGL_NO_IMAGE)
+    {
+      GDK_DISPLAY_DEBUG (display, DMABUF,
+                         "Creating EGLImage for dmabuf failed: %#x", eglGetError ());
+      return FALSE;
+    }
+
+  if (!eglExportDMABUFImageQueryMESA (egl_display,
+                                      image,
+                                      &fourcc,
+                                      &n_planes,
+                                      &modifier))
+    {
+      GDK_DISPLAY_DEBUG (display, DMABUF,
+                         "eglExportDMABUFImageQueryMESA failed: %#x", eglGetError ());
+      goto out;
+    }
+
+  if (n_planes < 1 || n_planes > GDK_DMABUF_MAX_PLANES)
+    {
+      GDK_DISPLAY_DEBUG (display, DMABUF,
+                         "dmabufs with %d planes are not supported", n_planes);
+      goto out;
+    }
+
+  if (!eglExportDMABUFImageMESA (egl_display,
+                                 image,
+                                 fds,
+                                 strides,
+                                 offsets))
+    {
+      g_warning ("eglExportDMABUFImage failed: %#x", eglGetError ());
+      goto out;
+    }
+
+  for (i = 0; i < n_planes; i++)
+    {
+      if (fds[i] == -1)
+        {
+          g_warning ("dmabuf plane %d has no file descriptor", i);
+          goto out;
+        }
+    }
+
+  dmabuf->fourcc = (guint32)fourcc;
+  dmabuf->modifier = modifier;
+  dmabuf->n_planes = n_planes;
+
+  for (i = 0; i < n_planes; i++)
+    {
+      dmabuf->planes[i].fd = fds[i];
+      dmabuf->planes[i].stride = (int) strides[i];
+      dmabuf->planes[i].offset = (int) offsets[i];
+    }
+
+  GDK_DISPLAY_DEBUG (display, DMABUF,
+                     "Exported GL texture to dmabuf (format: %.4s:%#" G_GINT64_MODIFIER "x, planes: %d)",
+             (char *)&fourcc, modifier, n_planes);
+
+  result = TRUE;
+
+out:
+  eglDestroyImageKHR (egl_display, image);
+
+  return result;
+#else
+  return FALSE;
+#endif
 }

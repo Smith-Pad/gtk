@@ -75,7 +75,9 @@ query_tooltip (GtkWidget  *widget,
   gtk_grid_attach (GTK_GRID (grid), label, 0, 2, 1, 1);
 
   precision = 1;
+  s = NULL;
   do {
+    g_free (s);
     s = g_strdup_printf ("%.*f", precision, self->scale);
     l = strlen (s) - 1;
     while (s[l] == '0')
@@ -387,6 +389,8 @@ demo3_widget_class_init (Demo3WidgetClass *class)
   gtk_widget_class_set_template_from_resource (widget_class, "/menu/demo3widget.ui");
   gtk_widget_class_bind_template_child (widget_class, Demo3Widget, menu);
   gtk_widget_class_bind_template_callback (widget_class, pressed_cb);
+
+  gtk_widget_class_set_accessible_role (widget_class, GTK_ACCESSIBLE_ROLE_IMG);
 }
 
 GtkWidget *

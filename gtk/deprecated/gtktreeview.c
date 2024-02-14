@@ -1140,7 +1140,7 @@ gtk_tree_view_class_init (GtkTreeViewClass *class)
    * @column: (nullable): the `GtkTreeViewColumn` in which the activation occurred
    *
    * The "row-activated" signal is emitted when the method
-   * [`method@Gtk.TreeView.row_activated`] is called.
+   * [method@Gtk.TreeView.row_activated] is called.
    *
    * This signal is emitted when the user double-clicks a treeview row with the
    * [property@Gtk.TreeView:activate-on-single-click] property set to %FALSE,
@@ -2427,7 +2427,7 @@ gtk_tree_view_size_allocate_columns (GtkWidget *widget)
 	{
 	  if (number_of_expand_columns == 1)
 	    {
-	      /* We add the remander to the last column as
+	      /* We add the remainder to the last column as
 	       * */
 	      column_width += extra;
 	    }
@@ -12834,6 +12834,12 @@ gtk_tree_view_is_blank_at_pos (GtkTreeView       *tree_view,
 
   gtk_tree_model_get_iter (priv->model, &iter, real_path);
   _gtk_tree_view_find_node (tree_view, real_path, &tree, &node);
+  if (node == NULL)
+    {
+      if (!path)
+        gtk_tree_path_free (real_path);
+      return TRUE;
+    }
 
   /* Check if there's an expander arrow at (x, y) */
   if (real_column == priv->expander_column

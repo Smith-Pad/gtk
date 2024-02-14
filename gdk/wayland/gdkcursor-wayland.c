@@ -175,7 +175,7 @@ _gdk_wayland_cursor_get_buffer (GdkWaylandDisplay *display,
                                             _gdk_wayland_display_get_cursor_theme (display),
                                             desired_scale,
                                             gdk_cursor_get_name (cursor));
-      if (c)
+      if (c && c->image_count > 0)
         {
           struct wl_cursor_image *image;
           int cursor_scale;
@@ -194,7 +194,7 @@ _gdk_wayland_cursor_get_buffer (GdkWaylandDisplay *display,
           if ((image->width % cursor_scale != 0) ||
               (image->height % cursor_scale != 0))
             {
-              g_warning (G_STRLOC " cursor image size (%dx%d) not an integer"
+              g_warning (G_STRLOC " cursor image size (%dx%d) not an integer "
                          "multiple of scale (%d)", image->width, image->height,
                          cursor_scale);
               cursor_scale = 1;
@@ -221,10 +221,10 @@ from_texture:
       surface = g_hash_table_lookup (display->cursor_surface_cache, cursor);
       if (surface == NULL)
         {
-          surface = _gdk_wayland_display_create_shm_surface (display,
-                                                             gdk_texture_get_width (texture),
-                                                             gdk_texture_get_height (texture),
-                                                             1);
+          surface = gdk_wayland_display_create_shm_surface (display,
+                                                            gdk_texture_get_width (texture),
+                                                            gdk_texture_get_height (texture),
+                                                            &GDK_FRACTIONAL_SCALE_INIT_INT (1));
           
           gdk_texture_download (texture,
                                 cairo_image_surface_get_data (surface),

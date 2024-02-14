@@ -512,6 +512,7 @@ _gtk_text_btree_unref (GtkTextBTree *tree)
       tree->insert_mark = NULL;
       g_object_unref (tree->selection_bound_mark);
       tree->selection_bound_mark = NULL;
+      tree->chars_changed_stamp = 0;
 
       g_free (tree);
     }
@@ -740,10 +741,8 @@ _gtk_text_btree_delete (GtkTextIter *start,
 
   tree = _gtk_text_iter_get_btree (start);
 
-#ifdef G_ENABLE_DEBUG
   if (GTK_DEBUG_CHECK (TEXT))
     _gtk_text_btree_check (tree);
-#endif
 
   /* Broadcast the need for redisplay before we break the iterators */
   DV (g_print ("invalidating due to deleting some text (%s)\n", G_STRLOC));
@@ -1064,10 +1063,8 @@ _gtk_text_btree_delete (GtkTextIter *start,
   chars_changed (tree);
   segments_changed (tree);
 
-#ifdef G_ENABLE_DEBUG
   if (GTK_DEBUG_CHECK (TEXT))
     _gtk_text_btree_check (tree);
-#endif
 
   /* Re-initialize our iterators */
   _gtk_text_btree_get_iter_at_line (tree, start, start_line, start_byte_offset);
@@ -1349,10 +1346,8 @@ find_line_by_y (GtkTextBTree *tree, BTreeView *view,
 {
   int current_y = 0;
 
-#ifdef G_ENABLE_DEBUG
   if (GTK_DEBUG_CHECK (TEXT))
     _gtk_text_btree_check (tree);
-#endif
 
   if (node->level == 0)
     {
@@ -2001,10 +1996,8 @@ _gtk_text_btree_tag (const GtkTextIter *start_orig,
 
   queue_tag_redisplay (tree, tag, &start, &end);
 
-#ifdef G_ENABLE_DEBUG
   if (GTK_DEBUG_CHECK (TEXT))
     _gtk_text_btree_check (tree);
-#endif
 }
 
 
@@ -2741,10 +2734,8 @@ real_set_mark (GtkTextBTree      *tree,
 
   iter = *where;
 
-#ifdef G_ENABLE_DEBUG
   if (GTK_DEBUG_CHECK (TEXT))
     _gtk_text_iter_check (&iter);
-#endif
 
   if (mark != NULL)
     {
@@ -2800,10 +2791,8 @@ real_set_mark (GtkTextBTree      *tree,
                              mark);
     }
 
-#ifdef G_ENABLE_DEBUG
   if (GTK_DEBUG_CHECK (TEXT))
     _gtk_text_iter_check (&iter);
-#endif
 
   /* Link mark into new location */
   gtk_text_btree_link_segment (mark, &iter);
@@ -2817,13 +2806,11 @@ real_set_mark (GtkTextBTree      *tree,
 
   redisplay_mark_if_visible (mark);
 
-#ifdef G_ENABLE_DEBUG
   if (GTK_DEBUG_CHECK (TEXT))
     {
       _gtk_text_iter_check (&iter);
       _gtk_text_btree_check (tree);
     }
-#endif
 
   return mark;
 }
@@ -3768,8 +3755,7 @@ _gtk_text_line_char_index (GtkTextLine *target_line)
   tos--;
 
   /* Check that we have the root node on top of the stack. */
-  g_assert (node_stack != NULL &&
-            node_stack[tos] != NULL &&
+  g_assert (node_stack[tos] != NULL &&
             node_stack[tos]->parent == NULL);
 
   /* Add up chars in all nodes before the nodes in our stack.
@@ -4338,10 +4324,8 @@ _gtk_text_line_next_could_contain_tag (GtkTextLine  *line,
 
   g_return_val_if_fail (line != NULL, NULL);
 
-#ifdef G_ENABLE_DEBUG
   if (GTK_DEBUG_CHECK (TEXT))
     _gtk_text_btree_check (tree);
-#endif
 
   if (tag == NULL)
     {
@@ -4503,10 +4487,8 @@ _gtk_text_line_previous_could_contain_tag (GtkTextLine  *line,
 
   g_return_val_if_fail (line != NULL, NULL);
 
-#ifdef G_ENABLE_DEBUG
   if (GTK_DEBUG_CHECK (TEXT))
     _gtk_text_btree_check (tree);
-#endif
 
   if (tag == NULL)
     {
@@ -5288,10 +5270,8 @@ _gtk_text_btree_validate (GtkTextBTree *tree,
       if (new_height)
         *new_height = state.new_height;
 
-#ifdef G_ENABLE_DEBUG
       if (GTK_DEBUG_CHECK (TEXT))
         _gtk_text_btree_check (tree);
-#endif
 
       return TRUE;
     }
@@ -5985,10 +5965,8 @@ post_insert_fixup (GtkTextBTree *tree,
       gtk_text_btree_rebalance (tree, node);
     }
 
-#ifdef G_ENABLE_DEBUG
   if (GTK_DEBUG_CHECK (TEXT))
     _gtk_text_btree_check (tree);
-#endif
 }
 
 static GtkTextTagInfo*
@@ -6517,10 +6495,8 @@ gtk_text_btree_link_segment (GtkTextLineSegment *seg,
   cleanup_line (line);
   segments_changed (tree);
 
-#ifdef G_ENABLE_DEBUG
   if (GTK_DEBUG_CHECK (TEXT))
     _gtk_text_btree_check (tree);
-#endif
 }
 
 static void
@@ -6614,7 +6590,6 @@ _gtk_toggle_segment_check_func (GtkTextLineSegment *segPtr,
 /*
  * Debug
  */
-#ifdef G_ENABLE_DEBUG
 static void
 gtk_text_btree_node_view_check_consistency (GtkTextBTree     *tree,
                                             GtkTextBTreeNode *node,
@@ -7061,7 +7036,6 @@ _gtk_text_btree_check (GtkTextBTree *tree)
                seg->body.chars);
     }
 }
-#endif /* G_ENABLE_DEBUG */
 
 void _gtk_text_btree_spew_line (GtkTextBTree* tree, GtkTextLine* line);
 void _gtk_text_btree_spew_segment (GtkTextBTree* tree, GtkTextLineSegment* seg);

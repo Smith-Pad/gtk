@@ -28,7 +28,7 @@
 #include "gtksnapshot.h"
 #include "gtktypebuiltins.h"
 #include "gtkwidgetprivate.h"
-#include "gdkpixbufutilsprivate.h"
+#include "gdktextureutilsprivate.h"
 
 /**
  * GtkPicture:
@@ -68,8 +68,8 @@
  * that paintables are never made smaller than their ideal size - but
  * be careful if you do not know the size of the paintable in use (like
  * when displaying user-loaded images). This can easily cause the picture to
- * grow larger than the screen. And [property@GtkWidget:halign] and
- * [property@GtkWidget:valign] can be used to make sure the paintable doesn't
+ * grow larger than the screen. And [property@Gtk.Widget:halign] and
+ * [property@Gtk.Widget:valign] can be used to make sure the paintable doesn't
  * fill all available space but is instead displayed at its original size.
  *
  * ## CSS nodes
@@ -173,8 +173,11 @@ gtk_picture_snapshot (GtkWidget   *widget,
             }
         }
 
-      x = (width - ceil (w)) / 2;
-      y = floor(height - ceil (h)) / 2;
+      w = ceil (w);
+      h = ceil (h);
+
+      x = (width - w) / 2;
+      y = floor(height - h) / 2;
 
       gtk_snapshot_save (snapshot);
       gtk_snapshot_translate (snapshot, &GRAPHENE_POINT_INIT (x, y));
@@ -525,6 +528,9 @@ gtk_picture_new_for_paintable (GdkPaintable *paintable)
  * The pixbuf must not be modified after passing it to this function.
  *
  * Returns: a new `GtkPicture`
+ *
+ * Deprecated: 4.12: Use [ctor@Gtk.Picture.new_for_paintable] and
+ *   [ctor@Gdk.Texture.new_for_pixbuf] instead
  */
 GtkWidget*
 gtk_picture_new_for_pixbuf (GdkPixbuf *pixbuf)
@@ -779,6 +785,8 @@ gtk_picture_set_resource (GtkPicture *self,
  * See [ctor@Gtk.Picture.new_for_pixbuf] for details.
  *
  * This is a utility function that calls [method@Gtk.Picture.set_paintable].
+ *
+ * Deprecated: 4.12: Use [method@Gtk.Picture.set_paintable] instead
  */
 void
 gtk_picture_set_pixbuf (GtkPicture *self,

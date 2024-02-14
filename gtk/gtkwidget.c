@@ -47,7 +47,6 @@
 #include "gtkmain.h"
 #include "gtkmarshalers.h"
 #include "gtknative.h"
-#include "gtkpopover.h"
 #include "gtkprivate.h"
 #include "gtkrenderbackgroundprivate.h"
 #include "gtkrenderborderprivate.h"
@@ -127,13 +126,13 @@
  * For example, when queried in the normal %GTK_SIZE_REQUEST_HEIGHT_FOR_WIDTH mode:
  *
  * First, the default minimum and natural width for each widget
- * in the interface will be computed using [id@gtk_widget_measure] with an
+ * in the interface will be computed using [method@Gtk.Widget.measure] with an
  * orientation of %GTK_ORIENTATION_HORIZONTAL and a for_size of -1.
  * Because the preferred widths for each widget depend on the preferred
  * widths of their children, this information propagates up the hierarchy,
  * and finally a minimum and natural width is determined for the entire
  * toplevel. Next, the toplevel will use the minimum width to query for the
- * minimum height contextual to that width using [id@gtk_widget_measure] with an
+ * minimum height contextual to that width using [method@Gtk.Widget.measure] with an
  * orientation of %GTK_ORIENTATION_VERTICAL and a for_size of the just computed
  * width. This will also be a highly recursive operation. The minimum height
  * for the minimum width is normally used to set the minimum size constraint
@@ -224,14 +223,14 @@
  * to do it.
  *
  * Of course if you are getting the size request for another widget, such
- * as a child widget, you must use [id@gtk_widget_measure]; otherwise, you
+ * as a child widget, you must use [method@Gtk.Widget.measure]; otherwise, you
  * would not properly consider widget margins, [class@Gtk.SizeGroup], and
  * so forth.
  *
  * GTK also supports baseline vertical alignment of widgets. This
  * means that widgets are positioned such that the typographical baseline of
  * widgets in the same row are aligned. This happens if a widget supports
- * baselines, has a vertical alignment of %GTK_ALIGN_BASELINE, and is inside
+ * baselines, has a vertical alignment using baselines, and is inside
  * a widget that supports baselines and has a natural “row” that it aligns to
  * the baseline, or a baseline assigned to it by the grandparent.
  *
@@ -241,7 +240,7 @@
  *
  * If a widget ends up baseline aligned it will be allocated all the space in
  * the parent as if it was %GTK_ALIGN_FILL, but the selected baseline can be
- * found via [id@gtk_widget_get_allocated_baseline]. If the baseline has a
+ * found via [method@Gtk.Widget.get_baseline]. If the baseline has a
  * value other than -1 you need to align the widget such that the baseline
  * appears at the position.
  *
@@ -336,7 +335,13 @@
  * which might be referenced by other widgets declared as children of the
  * `<template>` tag.
  *
- * An example of a template definition:
+ * Since, unlike the `<object>` tag, the `<template>` tag does not contain an
+ * “id” attribute, if you need to refer to the instance of the object itself that
+ * the template will create, simply refer to the template class name in an
+ * applicable element content.
+ *
+ * Here is an example of a template definition, which includes an example of
+ * this in the `<signal>` tag:
  *
  * ```xml
  * <interface>
@@ -406,7 +411,7 @@
  * ```
  *
  * You can access widgets defined in the template using the
- * [id@gtk_widget_get_template_child] function, but you will typically declare
+ * [method@Gtk.Widget.get_template_child] function, but you will typically declare
  * a pointer in the instance private data structure of your type using the same
  * name as the widget in the template definition, and call
  * [method@Gtk.WidgetClass.bind_template_child_full] (or one of its wrapper macros
@@ -878,6 +883,8 @@ gtk_widget_set_accessible_role (GtkWidget         *self,
 {
   GtkWidgetPrivate *priv = gtk_widget_get_instance_private (self);
 
+  g_return_if_fail (!gtk_accessible_role_is_abstract (role));
+
   if (priv->at_context == NULL || !gtk_at_context_is_realized (priv->at_context))
     {
       priv->accessible_role = role;
@@ -903,27 +910,27 @@ gtk_widget_get_accessible_role (GtkWidget *self)
 {
   GtkWidgetPrivate *priv = gtk_widget_get_instance_private (self);
   GtkATContext *context = gtk_accessible_get_at_context (GTK_ACCESSIBLE (self));
-  GtkWidgetClassPrivate *class_priv;
 
   if (context != NULL)
     {
-      GtkAccessibleRole role = GTK_ACCESSIBLE_ROLE_NONE;
+      GtkAccessibleRole role = GTK_ACCESSIBLE_ROLE_WIDGET;
 
       if (gtk_at_context_is_realized (context))
         role = gtk_at_context_get_accessible_role (context);
 
       g_object_unref (context);
 
-      if (role != GTK_ACCESSIBLE_ROLE_NONE)
+      if (role != GTK_ACCESSIBLE_ROLE_WIDGET)
         return role;
     }
 
   if (priv->accessible_role != GTK_ACCESSIBLE_ROLE_WIDGET)
     return priv->accessible_role;
 
-  class_priv = GTK_WIDGET_GET_CLASS (self)->priv;
+  if (GTK_WIDGET_GET_CLASS (self)->priv->accessible_role != GTK_ACCESSIBLE_ROLE_WIDGET)
+    return GTK_WIDGET_GET_CLASS (self)->priv->accessible_role;
 
-  return class_priv->accessible_role;
+  return GTK_ACCESSIBLE_ROLE_GENERIC;
 }
 
 static void
@@ -1837,6 +1844,11 @@ gtk_widget_class_init (GtkWidgetClass *klass)
    * @direction: the direction of the focus move
    *
    * Emitted when the focus is moved.
+   *
+   * The ::move-focus signal is a [keybinding signal](class.SignalAction.html).
+   *
+   * The default bindings for this signal are <kbd>Tab</kbd> to move forward,
+   * and <kbd>Shift</kbd>+<kbd>Tab</kbd> to move backward.
    */
   widget_signals[MOVE_FOCUS] =
     g_signal_new (I_("move-focus"),
@@ -1885,7 +1897,7 @@ gtk_widget_class_init (GtkWidgetClass *klass)
    * @keyboard_mode: %TRUE if the tooltip was triggered using the keyboard
    * @tooltip: a `GtkTooltip`
    *
-   * Emitted when the widgets tooltip is about to be shown.
+   * Emitted when the widget’s tooltip is about to be shown.
    *
    * This happens when the [property@Gtk.Widget:has-tooltip] property
    * is %TRUE and the hover timeout has expired with the cursor hovering
@@ -1919,7 +1931,7 @@ gtk_widget_class_init (GtkWidgetClass *klass)
                               _gtk_marshal_BOOLEAN__INT_INT_BOOLEAN_OBJECTv);
 
   gtk_widget_class_set_css_name (klass, I_("widget"));
-  gtk_widget_class_set_accessible_role (klass, GTK_ACCESSIBLE_ROLE_WIDGET);
+  klass->priv->accessible_role = GTK_ACCESSIBLE_ROLE_WIDGET;
 }
 
 static void
@@ -2303,7 +2315,7 @@ gtk_widget_init (GTypeInstance *instance, gpointer g_class)
   priv->prev_sibling = NULL;
   priv->next_sibling = NULL;
   priv->baseline = -1;
-  priv->allocated_size_baseline = -1;
+  priv->allocated_baseline = -1;
 
   priv->sensitive = TRUE;
   priv->alloc_needed = TRUE;
@@ -2342,6 +2354,10 @@ gtk_widget_init (GTypeInstance *instance, gpointer g_class)
   priv->halign = GTK_ALIGN_FILL;
   priv->valign = GTK_ALIGN_FILL;
 
+  /* Note that we intentionally set this to an abstract role here.
+   * See gtk_widget_get_accessible_role() for where it gets overridden
+   * with GTK_ACCESSIBLE_ROLE_GENERIC.
+   */
   priv->accessible_role = GTK_ACCESSIBLE_ROLE_WIDGET;
 
   priv->width_request = -1;
@@ -2373,6 +2389,10 @@ gtk_widget_init (GTypeInstance *instance, gpointer g_class)
     }
 
   priv->at_context = create_at_context (widget);
+
+  gtk_accessible_update_state (GTK_ACCESSIBLE (widget),
+                               GTK_ACCESSIBLE_STATE_HIDDEN, TRUE,
+                               -1);
 }
 
 static void
@@ -2386,14 +2406,13 @@ gtk_widget_root_at_context (GtkWidget *self)
 
   /* Reset the accessible role to its current value */
   if (role == GTK_ACCESSIBLE_ROLE_WIDGET)
-    {
-      GtkWidgetClassPrivate *class_priv = GTK_WIDGET_GET_CLASS (self)->priv;
-
-      role = class_priv->accessible_role;
-    }
+    role = GTK_WIDGET_GET_CLASS (self)->priv->accessible_role;
+  if (role == GTK_ACCESSIBLE_ROLE_WIDGET)
+    role = GTK_ACCESSIBLE_ROLE_GENERIC;
 
   gtk_at_context_set_accessible_role (priv->at_context, role);
-  gtk_at_context_set_display (priv->at_context, gtk_root_get_display (priv->root));
+  if (priv->root)
+    gtk_at_context_set_display (priv->at_context, gtk_root_get_display (priv->root));
 }
 
 static void
@@ -2704,10 +2723,6 @@ gtk_widget_show (GtkWidget *widget)
       g_signal_emit (widget, widget_signals[SHOW], 0);
       g_object_notify_by_pspec (G_OBJECT (widget), widget_props[PROP_VISIBLE]);
 
-      gtk_accessible_update_state (GTK_ACCESSIBLE (widget),
-                                   GTK_ACCESSIBLE_STATE_HIDDEN, FALSE,
-                                   -1);
-
       gtk_widget_pop_verify_invariants (widget);
       g_object_unref (widget);
     }
@@ -2771,10 +2786,6 @@ gtk_widget_hide (GtkWidget *widget)
       g_signal_emit (widget, widget_signals[HIDE], 0);
       g_object_notify_by_pspec (G_OBJECT (widget), widget_props[PROP_VISIBLE]);
 
-      gtk_accessible_update_state (GTK_ACCESSIBLE (widget),
-                                   GTK_ACCESSIBLE_STATE_HIDDEN, TRUE,
-                                   -1);
-
       parent = gtk_widget_get_parent (widget);
       if (parent)
         gtk_widget_queue_resize (parent);
@@ -2801,10 +2812,11 @@ gtk_widget_real_hide (GtkWidget *widget)
   g_clear_pointer (&priv->allocated_transform, gsk_transform_unref);
   priv->allocated_width = 0;
   priv->allocated_height = 0;
-  priv->allocated_size_baseline = 0;
+  priv->allocated_baseline = 0;
   g_clear_pointer (&priv->transform, gsk_transform_unref);
   priv->width = 0;
   priv->height = 0;
+  priv->baseline = 0;
   gtk_widget_update_paintables (widget);
 }
 
@@ -2846,6 +2858,10 @@ gtk_widget_map (GtkWidget *widget)
 
       gtk_widget_queue_draw (widget);
 
+      gtk_accessible_update_state (GTK_ACCESSIBLE (widget),
+                                   GTK_ACCESSIBLE_STATE_HIDDEN, FALSE,
+                                   -1);
+
       gtk_widget_pop_verify_invariants (widget);
     }
 }
@@ -2874,6 +2890,10 @@ gtk_widget_unmap (GtkWidget *widget)
       g_signal_emit (widget, widget_signals[UNMAP], 0);
 
       update_cursor_on_state_change (widget);
+
+      gtk_accessible_update_state (GTK_ACCESSIBLE (widget),
+                                   GTK_ACCESSIBLE_STATE_HIDDEN, TRUE,
+                                   -1);
 
       gtk_widget_pop_verify_invariants (widget);
       g_object_unref (widget);
@@ -3468,34 +3488,6 @@ gtk_widget_unrealize (GtkWidget *widget)
   g_object_unref (widget);
 }
 
-void
-gtk_widget_get_surface_allocation (GtkWidget     *widget,
-                                  GtkAllocation *allocation)
-{
-  GtkNative *native;
-  graphene_rect_t bounds;
-  double nx, ny;
-
-  native = gtk_widget_get_native (widget);
-
-  g_assert (GTK_IS_WINDOW (native) || GTK_IS_POPOVER (native));
-  gtk_native_get_surface_transform (native, &nx, &ny);
-
-  if (gtk_widget_compute_bounds (widget, GTK_WIDGET (native), &bounds))
-    {
-      *allocation = (GtkAllocation) {
-        floorf (bounds.origin.x) + nx,
-        floorf (bounds.origin.y) + ny,
-        ceilf (bounds.size.width),
-        ceilf (bounds.size.height)
-      };
-    }
-  else
-    {
-      *allocation = (GtkAllocation) { 0, 0, 0, 0 };
-    }
-}
-
 /**
  * gtk_widget_queue_draw:
  * @widget: a `GtkWidget`
@@ -3771,7 +3763,8 @@ effective_align (GtkAlign         align,
       return direction == GTK_TEXT_DIR_RTL ? GTK_ALIGN_START : GTK_ALIGN_END;
     case GTK_ALIGN_FILL:
     case GTK_ALIGN_CENTER:
-    case GTK_ALIGN_BASELINE:
+    case GTK_ALIGN_BASELINE_FILL:
+    case GTK_ALIGN_BASELINE_CENTER:
     default:
       return align;
     }
@@ -3781,11 +3774,32 @@ static void
 adjust_for_align (GtkAlign  align,
                   int       natural_size,
                   int      *allocated_pos,
-                  int      *allocated_size)
+                  int      *allocated_size,
+                  int       nat_baseline,
+                  int      *allocated_baseline)
 {
   switch (align)
     {
-    case GTK_ALIGN_BASELINE:
+    case GTK_ALIGN_BASELINE_CENTER:
+      if (*allocated_size > natural_size &&
+          nat_baseline > -1 &&
+          *allocated_baseline > -1)
+        {
+          *allocated_pos = *allocated_baseline - nat_baseline;
+          *allocated_size = MIN (*allocated_size, natural_size);
+          *allocated_baseline = nat_baseline;
+          break;
+        }
+      G_GNUC_FALLTHROUGH;
+
+    case GTK_ALIGN_CENTER:
+      if (*allocated_size > natural_size)
+        {
+          *allocated_pos += (*allocated_size - natural_size) / 2;
+          *allocated_size = MIN (*allocated_size, natural_size);
+        }
+      break;
+    case GTK_ALIGN_BASELINE_FILL:
     case GTK_ALIGN_FILL:
     default:
       /* change nothing */
@@ -3801,29 +3815,24 @@ adjust_for_align (GtkAlign  align,
           *allocated_size = natural_size;
         }
       break;
-    case GTK_ALIGN_CENTER:
-      if (*allocated_size > natural_size)
-        {
-          *allocated_pos += (*allocated_size - natural_size) / 2;
-          *allocated_size = MIN (*allocated_size, natural_size);
-        }
-      break;
     }
 }
 
 static inline void
 gtk_widget_adjust_size_allocation (GtkWidget     *widget,
-                                   GtkAllocation *allocation)
+                                   GtkAllocation *allocation,
+                                   int           *baseline)
 {
   GtkWidgetPrivate *priv = gtk_widget_get_instance_private (widget);
-  int natural_width, natural_height;
+  int natural_width, natural_height, nat_baseline;
   int min_width, min_height;
 
   if (priv->halign == GTK_ALIGN_FILL && priv->valign == GTK_ALIGN_FILL)
-    return;
+    goto out;
 
   /* Note that adjust_for_align removes any margins from the
-   * allocated sizes and possibly limits them to the natural sizes */
+   * allocated sizes and possibly limits them to the natural sizes
+   */
 
   if (priv->halign == GTK_ALIGN_FILL ||
       (priv->valign != GTK_ALIGN_FILL &&
@@ -3839,14 +3848,17 @@ gtk_widget_adjust_size_allocation (GtkWidget     *widget,
       adjust_for_align (effective_align (priv->halign, _gtk_widget_get_direction (widget)),
                         natural_width - priv->margin.left - priv->margin.right,
                         &allocation->x,
-                        &allocation->width);
+                        &allocation->width,
+                        -1, baseline);
       gtk_widget_measure (widget, GTK_ORIENTATION_VERTICAL,
                           allocation->width + priv->margin.left + priv->margin.right,
-                          &min_height, &natural_height, NULL, NULL);
+                          NULL, &natural_height, NULL, &nat_baseline);
       adjust_for_align (priv->valign,
                         natural_height - priv->margin.top - priv->margin.bottom,
                         &allocation->y,
-                        &allocation->height);
+                        &allocation->height,
+                        nat_baseline > -1 ? nat_baseline - priv->margin.top : -1,
+                        baseline);
     }
   else
     {
@@ -3855,20 +3867,28 @@ gtk_widget_adjust_size_allocation (GtkWidget     *widget,
                           &min_height, NULL, NULL, NULL);
       gtk_widget_measure (widget, GTK_ORIENTATION_VERTICAL,
                           -1,
-                          NULL, &natural_height, NULL, NULL);
+                          NULL, &natural_height, NULL, &nat_baseline);
       natural_height = MAX (min_height, natural_height);
       adjust_for_align (priv->valign,
                         natural_height - priv->margin.top - priv->margin.bottom,
                         &allocation->y,
-                        &allocation->height);
+                        &allocation->height,
+                        nat_baseline > -1 ? nat_baseline - priv->margin.top : -1,
+                        baseline);
       gtk_widget_measure (widget, GTK_ORIENTATION_HORIZONTAL,
                           allocation->height + priv->margin.top + priv->margin.bottom,
                           &min_width, &natural_width, NULL, NULL);
       adjust_for_align (effective_align (priv->halign, _gtk_widget_get_direction (widget)),
                         natural_width - priv->margin.left - priv->margin.right,
                         &allocation->x,
-                        &allocation->width);
+                        &allocation->width,
+                        -1, NULL);
     }
+
+out:
+  if (priv->valign != GTK_ALIGN_BASELINE_FILL &&
+      priv->valign != GTK_ALIGN_BASELINE_CENTER)
+    *baseline = -1;
 }
 
 static void
@@ -3882,7 +3902,7 @@ gtk_widget_ensure_allocate_on_children (GtkWidget *widget)
 
   if (!priv->alloc_needed_on_child)
     return;
-  
+
   priv->alloc_needed_on_child = FALSE;
 
   for (child = _gtk_widget_get_first_child (widget);
@@ -3976,14 +3996,14 @@ gtk_widget_allocate (GtkWidget    *widget,
   /* Preserve request/allocate ordering */
   priv->alloc_needed = FALSE;
 
-  baseline_changed = priv->allocated_size_baseline != baseline;
+  baseline_changed = priv->allocated_baseline != baseline;
   transform_changed = !gsk_transform_equal (priv->allocated_transform, transform);
 
   gsk_transform_unref (priv->allocated_transform);
   priv->allocated_transform = gsk_transform_ref (transform);
   priv->allocated_width = width;
   priv->allocated_height = height;
-  priv->allocated_size_baseline = baseline;
+  priv->allocated_baseline = baseline;
 
   if (_gtk_widget_get_direction (widget) == GTK_TEXT_DIR_LTR)
     adjusted.x = priv->margin.left;
@@ -3995,7 +4015,7 @@ gtk_widget_allocate (GtkWidget    *widget,
   if (baseline >= 0)
     baseline -= priv->margin.top;
 
-  gtk_widget_adjust_size_allocation (widget, &adjusted);
+  gtk_widget_adjust_size_allocation (widget, &adjusted, &baseline);
 
   if (adjusted.width < 0 || adjusted.height < 0)
     {
@@ -4063,7 +4083,7 @@ gtk_widget_allocate (GtkWidget    *widget,
     {
       gtk_widget_ensure_allocate_on_children (widget);
     }
-  else 
+  else
     {
       priv->width = adjusted.width;
       priv->height = adjusted.height;
@@ -4087,14 +4107,12 @@ gtk_widget_allocate (GtkWidget    *widget,
         }
 
       /* Size allocation is god... after consulting god, no further requests or allocations are needed */
-#ifdef G_ENABLE_DEBUG
       if (GTK_DISPLAY_DEBUG_CHECK (_gtk_widget_get_display (widget), GEOMETRY) &&
           gtk_widget_get_resize_needed (widget))
         {
           g_warning ("%s %p or a child called gtk_widget_queue_resize() during size_allocate().",
                      gtk_widget_get_name (widget), widget);
         }
-#endif
 
       gtk_widget_ensure_resize (widget);
       priv->alloc_needed = FALSE;
@@ -4107,7 +4125,7 @@ gtk_widget_allocate (GtkWidget    *widget,
       if (size_changed || baseline_changed)
         gtk_widget_queue_draw (widget);
     }
-  
+
   if (transform_changed && priv->parent)
     gtk_widget_queue_draw (priv->parent);
 
@@ -4192,6 +4210,8 @@ gtk_widget_common_ancestor (GtkWidget *widget_a,
  * Returns: %FALSE if @src_widget and @dest_widget have no common
  *   ancestor. In this case, 0 is stored in *@dest_x and *@dest_y.
  *   Otherwise %TRUE.
+ *
+ * Deprecated: 4.12: Use gtk_widget_compute_point() instead
  */
 gboolean
 gtk_widget_translate_coordinates (GtkWidget  *src_widget,
@@ -4275,7 +4295,7 @@ gtk_widget_compute_point (GtkWidget              *widget,
  * This function is a convenience wrapper around
  * [method@Gtk.WidgetClass.add_shortcut] and must be called during class
  * initialization. It does not provide for user_data, if you need that,
- * you will have to use [method@GtkWidgetClass.add_shortcut] with a custom
+ * you will have to use [method@Gtk.WidgetClass.add_shortcut] with a custom
  * shortcut.
  */
 void
@@ -4564,7 +4584,6 @@ gtk_widget_run_controllers (GtkWidget           *widget,
               is_gesture = GTK_IS_GESTURE (controller);
               this_handled = gtk_event_controller_handle_event (controller, event, target, x, y);
 
-#ifdef G_ENABLE_DEBUG
               if (GTK_DEBUG_CHECK (KEYBINDINGS))
                 {
                   GdkEventType type = gdk_event_get_event_type (event);
@@ -4578,7 +4597,6 @@ gtk_widget_run_controllers (GtkWidget           *widget,
                                  gtk_event_controller_get_name (controller));
                     }
                 }
-#endif
 
               handled |= this_handled;
 
@@ -5725,7 +5743,7 @@ _gtk_widget_set_visible_flag (GtkWidget *widget,
       g_clear_pointer (&priv->allocated_transform, gsk_transform_unref);
       priv->allocated_width = 0;
       priv->allocated_height = 0;
-      priv->allocated_size_baseline = 0;
+      priv->allocated_baseline = 0;
       g_clear_pointer (&priv->transform, gsk_transform_unref);
       priv->width = 0;
       priv->height = 0;
@@ -5971,6 +5989,9 @@ gtk_widget_reposition_after (GtkWidget *widget,
 
   prev_parent = priv->parent;
   prev_previous = priv->prev_sibling;
+
+  if (priv->parent == parent && previous_sibling == prev_previous)
+    return;
 
   if (priv->parent != NULL && priv->parent != parent)
     {
@@ -6444,6 +6465,8 @@ gtk_widget_update_pango_context (GtkWidget        *widget,
   GtkSettings *settings;
   cairo_font_options_t *font_options;
   guint old_serial;
+  gboolean hint_font_metrics = FALSE;
+  int scale;
 
   old_serial = pango_context_get_serial (context);
 
@@ -6451,14 +6474,18 @@ gtk_widget_update_pango_context (GtkWidget        *widget,
   pango_context_set_font_description (context, font_desc);
   pango_font_description_free (font_desc);
 
+  scale = gtk_widget_get_scale_factor (widget);
   settings = gtk_widget_get_settings (widget);
 
-  if (settings &&
+  if (settings != NULL &&
       cairo_version () >= CAIRO_VERSION_ENCODE (1, 17, 4))
     {
-      gboolean hint_font_metrics;
-
       g_object_get (settings, "gtk-hint-font-metrics", &hint_font_metrics, NULL);
+
+      /* Override the user setting on non-HiDPI */
+      if (scale == 1)
+        hint_font_metrics = TRUE;
+
       pango_context_set_round_glyph_positions (context, hint_font_metrics);
     }
 
@@ -6476,13 +6503,25 @@ gtk_widget_update_pango_context (GtkWidget        *widget,
 
       options = cairo_font_options_copy (gtk_settings_get_font_options (settings));
       cairo_font_options_merge (options, font_options);
+
+      cairo_font_options_set_hint_metrics (options,
+                                           hint_font_metrics == 1 ? CAIRO_HINT_METRICS_ON
+                                                                  : CAIRO_HINT_METRICS_OFF);
+
       pango_cairo_context_set_font_options (context, options);
       cairo_font_options_destroy (options);
     }
   else if (settings)
     {
-      pango_cairo_context_set_font_options (context,
-                                            gtk_settings_get_font_options (settings));
+      cairo_font_options_t *options;
+
+      options = cairo_font_options_copy (gtk_settings_get_font_options (settings));
+      cairo_font_options_set_hint_metrics (options,
+                                           hint_font_metrics == 1 ? CAIRO_HINT_METRICS_ON
+                                                                  : CAIRO_HINT_METRICS_OFF);
+
+      pango_cairo_context_set_font_options (context, options);
+      cairo_font_options_destroy (options);
     }
 
   pango_context_set_font_map (context, gtk_widget_get_effective_font_map (widget));
@@ -6499,7 +6538,7 @@ gtk_widget_update_default_pango_context (GtkWidget *widget)
     return;
 
   if (gtk_widget_update_pango_context (widget, context, _gtk_widget_get_direction (widget)))
-    gtk_widget_queue_draw (widget);
+    gtk_widget_queue_resize (widget);
 }
 
 /**
@@ -6781,6 +6820,8 @@ G_GNUC_BEGIN_IGNORE_DEPRECATIONS
   if (priv->context)
     gtk_style_context_set_scale (priv->context, gtk_widget_get_scale_factor (widget));
 G_GNUC_END_IGNORE_DEPRECATIONS
+
+  gtk_widget_update_default_pango_context (widget);
 
   g_object_notify_by_pspec (G_OBJECT (widget), widget_props[PROP_SCALE_FACTOR]);
 
@@ -8475,8 +8516,7 @@ static GtkATContext *
 create_at_context (GtkWidget *self)
 {
   GtkWidgetPrivate *priv = gtk_widget_get_instance_private (self);
-  GtkWidgetClass *widget_class = GTK_WIDGET_GET_CLASS (self);
-  GtkWidgetClassPrivate *class_priv = widget_class->priv;
+  GtkWidgetClassPrivate *class_priv = GTK_WIDGET_GET_CLASS (self)->priv;
   GtkAccessibleRole role;
 
   if (priv->in_destruction)
@@ -8490,22 +8530,20 @@ create_at_context (GtkWidget *self)
   /* Widgets have two options to set the accessible role: either they
    * define it in their class_init() function, and the role applies to
    * all instances; or an instance is created with the :accessible-role
-   * property (from GtkAccessible) set to anything other than the default
+   * property (from GtkAccessible) set to anything other than the initial
    * GTK_ACCESSIBLE_ROLE_WIDGET value.
    *
    * In either case, the accessible role cannot be set post-construction.
    */
+
   if (priv->accessible_role != GTK_ACCESSIBLE_ROLE_WIDGET)
     role = priv->accessible_role;
   else
     role = class_priv->accessible_role;
 
   priv->accessible_role = role;
-  priv->at_context = gtk_at_context_create (role, GTK_ACCESSIBLE (self), gdk_display_get_default ());
-  if (priv->at_context != NULL)
-    return g_object_ref (priv->at_context);
 
-  return NULL;
+  return gtk_at_context_create (role, GTK_ACCESSIBLE (self), gdk_display_get_default ());
 }
 
 static GtkATContext *
@@ -8592,7 +8630,6 @@ gtk_widget_accessible_get_bounds (GtkAccessible *self,
   GtkWidget *widget;
   GtkWidget *parent;
   GtkWidget *bounds_relative_to;
-  double translated_x, translated_y;
   graphene_rect_t bounds = GRAPHENE_RECT_INIT_ZERO;
 
   widget = GTK_WIDGET (self);
@@ -8602,9 +8639,11 @@ gtk_widget_accessible_get_bounds (GtkAccessible *self,
   parent = gtk_widget_get_parent (widget);
   if (parent != NULL)
     {
-      gtk_widget_translate_coordinates (widget, parent, 0., 0., &translated_x, &translated_y);
-      *x = floorf (translated_x);
-      *y = floorf (translated_y);
+      graphene_point_t p;
+      if (!gtk_widget_compute_point (widget, parent, &GRAPHENE_POINT_INIT (0, 0), &p))
+        graphene_point_init (&p, 0, 0);
+      *x = floorf (p.x);
+      *y = floorf (p.y);
       bounds_relative_to = parent;
     }
   else
@@ -9428,9 +9467,10 @@ gtk_widget_buildable_custom_finished (GtkBuildable *buildable,
  * Gets the horizontal alignment of @widget.
  *
  * For backwards compatibility reasons this method will never return
- * %GTK_ALIGN_BASELINE, but instead it will convert it to
- * %GTK_ALIGN_FILL. Baselines are not supported for horizontal
- * alignment.
+ * one of the baseline alignments, but instead it will convert it to
+ * `GTK_ALIGN_FILL` or `GTK_ALIGN_CENTER`.
+ *
+ * Baselines are not supported for horizontal alignment.
  *
  * Returns: the horizontal alignment of @widget
  */
@@ -9441,8 +9481,10 @@ gtk_widget_get_halign (GtkWidget *widget)
 
   g_return_val_if_fail (GTK_IS_WIDGET (widget), GTK_ALIGN_FILL);
 
-  if (priv->halign == GTK_ALIGN_BASELINE)
+  if (priv->halign == GTK_ALIGN_BASELINE_FILL)
     return GTK_ALIGN_FILL;
+  else if (priv->halign == GTK_ALIGN_BASELINE_CENTER)
+    return GTK_ALIGN_CENTER;
   return priv->halign;
 }
 
@@ -9907,10 +9949,6 @@ gtk_widget_set_tooltip_text (GtkWidget  *widget,
   priv->tooltip_text = tooltip_text;
   priv->tooltip_markup = tooltip_markup;
 
-  gtk_accessible_update_property (GTK_ACCESSIBLE (widget),
-                                  GTK_ACCESSIBLE_PROPERTY_DESCRIPTION, priv->tooltip_text,
-                                  -1);
-
   gtk_widget_set_has_tooltip (widget, priv->tooltip_text != NULL);
   if (_gtk_widget_get_visible (widget))
     gtk_widget_trigger_tooltip_query (widget);
@@ -10094,6 +10132,9 @@ gtk_widget_get_has_tooltip (GtkWidget *widget)
  * So a layout container is guaranteed that its children stay inside
  * the assigned bounds, but not that they have exactly the bounds the
  * container assigned.
+ *
+ * Deprecated: 4.12: Use [method@Gtk.Widget.compute_bounds],
+ * [method@Gtk.Widget.get_width] or [method@Gtk.Widget.get_height] instead.
  */
 void
 gtk_widget_get_allocation (GtkWidget     *widget,
@@ -10303,6 +10344,9 @@ gtk_widget_pick (GtkWidget    *widget,
  * when @widget and @target do not share a common ancestor. In that
  * case @out_transform gets set to the identity matrix.
  *
+ * To learn more about widget coordinate systems, see the coordinate
+ * system [overview](coordinates.html).
+ *
  * Returns: %TRUE if the transform could be computed, %FALSE otherwise
  */
 gboolean
@@ -10377,7 +10421,9 @@ gtk_widget_compute_transform (GtkWidget         *widget,
  *
  * Computes the bounds for @widget in the coordinate space of @target.
  *
- * FIXME: Explain what "bounds" are.
+ * The bounds of widget are (the bounding box of) the region that it is
+ * expected to draw in. See the [coordinate system](coordinates.html)
+ * overview to learn more.
  *
  * If the operation is successful, %TRUE is returned. If @widget has no
  * bounds or the bounds cannot be expressed in @target's coordinate space
@@ -10420,7 +10466,12 @@ gtk_widget_compute_bounds (GtkWidget       *widget,
  *
  * Returns the width that has currently been allocated to @widget.
  *
+ * To learn more about widget sizes, see the coordinate
+ * system [overview](coordinates.html).
+ *
  * Returns: the width of the @widget
+ *
+ * Deprecated: 4.12: Use [method@Gtk.Widget.get_width] instead
  */
 int
 gtk_widget_get_allocated_width (GtkWidget *widget)
@@ -10440,7 +10491,12 @@ gtk_widget_get_allocated_width (GtkWidget *widget)
  *
  * Returns the height that has currently been allocated to @widget.
  *
+ * To learn more about widget sizes, see the coordinate
+ * system [overview](coordinates.html).
+ *
  * Returns: the height of the @widget
+ *
+ * Deprecated: 4.12: Use [method@Gtk.Widget.get_height] instead
  */
 int
 gtk_widget_get_allocated_height (GtkWidget *widget)
@@ -10465,9 +10521,31 @@ gtk_widget_get_allocated_height (GtkWidget *widget)
  * child widgets in `GtkWidget`Class.size_allocate().
  *
  * Returns: the baseline of the @widget, or -1 if none
+ *
+ * Deprecated: 4.12: Use [method@Gtk.Widget.get_baseline] instead
  */
 int
 gtk_widget_get_allocated_baseline (GtkWidget *widget)
+{
+  return gtk_widget_get_baseline (widget);
+}
+
+/**
+ * gtk_widget_get_baseline:
+ * @widget: the widget to query
+ *
+ * Returns the baseline that has currently been allocated to @widget.
+ *
+ * This function is intended to be used when implementing handlers
+ * for the `GtkWidget`Class.snapshot() function, and when allocating
+ * child widgets in `GtkWidget`Class.size_allocate().
+ *
+ * Returns: the baseline of the @widget, or -1 if none
+ *
+ * Since: 4.12
+ */
+int
+gtk_widget_get_baseline (GtkWidget *widget)
 {
   GtkWidgetPrivate *priv = gtk_widget_get_instance_private (widget);
   GtkCssStyle *style;
@@ -10594,7 +10672,7 @@ gtk_widget_set_overflow (GtkWidget   *widget,
  * gtk_widget_get_overflow: (attributes org.gtk.Method.get_property=overflow)
  * @widget: a `GtkWidget`
  *
- * Returns the widgets overflow value.
+ * Returns the widget’s overflow value.
  *
  * Returns: The widget's overflow.
  **/
@@ -10638,7 +10716,11 @@ gtk_widget_set_has_focus (GtkWidget *widget,
 gboolean
 gtk_widget_in_destruction (GtkWidget *widget)
 {
-  GtkWidgetPrivate *priv = gtk_widget_get_instance_private (widget);
+  GtkWidgetPrivate *priv;
+
+  g_return_val_if_fail (GTK_IS_WIDGET (widget), FALSE);
+
+  priv = gtk_widget_get_instance_private (widget);
 
   return priv->in_destruction;
 }
@@ -10717,7 +10799,7 @@ gtk_widget_ensure_allocate (GtkWidget *widget)
       gtk_widget_allocate (widget,
                            priv->allocated_width,
                            priv->allocated_height,
-                           priv->allocated_size_baseline,
+                           priv->allocated_baseline,
                            gsk_transform_ref (priv->allocated_transform));
     }
   else
@@ -10878,7 +10960,7 @@ _gtk_widget_peek_style_context (GtkWidget *widget)
  * The returned object is guaranteed to be the same
  * for the lifetime of @widget.
  *
- * Returns: (transfer none): the widgets `GtkStyleContext`
+ * Returns: (transfer none): the widget’s `GtkStyleContext`
  *
  * Deprecated: 4.10: Style contexts will be removed in GTK 5
  */
@@ -11386,7 +11468,7 @@ gtk_widget_class_bind_template_callback_full (GtkWidgetClass *widget_class,
  * this class’s template data.
  *
  * Note that this must be called from a composite widget classes class
- * initializer after calling [method@GtkWidgetClass.set_template].
+ * initializer after calling [method@Gtk.WidgetClass.set_template].
  */
 void
 gtk_widget_class_set_template_scope (GtkWidgetClass  *widget_class,
@@ -11874,7 +11956,7 @@ gtk_widget_render (GtkWidget            *widget,
   if (GDK_PROFILER_IS_RUNNING)
     {
       before_render = GDK_PROFILER_CURRENT_TIME;
-      gdk_profiler_add_mark (before_snapshot, (before_render - before_snapshot), "widget snapshot", "");
+      gdk_profiler_add_mark (before_snapshot, (before_render - before_snapshot), "Widget snapshot", "");
     }
 
   if (root != NULL)
@@ -11890,7 +11972,7 @@ gtk_widget_render (GtkWidget            *widget,
 
       gsk_render_node_unref (root);
 
-      gdk_profiler_end_mark (before_render, "widget render", "");
+      gdk_profiler_end_mark (before_render, "Widget render", "");
     }
 }
 
@@ -12016,7 +12098,7 @@ gtk_widget_observe_controllers (GtkWidget *widget)
  * gtk_widget_get_first_child:
  * @widget: a `GtkWidget`
  *
- * Returns the widgets first child.
+ * Returns the widget’s first child.
  *
  * This API is primarily meant for widget implementations.
  *
@@ -12036,7 +12118,7 @@ gtk_widget_get_first_child (GtkWidget *widget)
  * gtk_widget_get_last_child:
  * @widget: a `GtkWidget`
  *
- * Returns the widgets last child.
+ * Returns the widget’s last child.
  *
  * This API is primarily meant for widget implementations.
  *
@@ -12056,7 +12138,7 @@ gtk_widget_get_last_child (GtkWidget *widget)
  * gtk_widget_get_next_sibling:
  * @widget: a `GtkWidget`
  *
- * Returns the widgets next sibling.
+ * Returns the widget’s next sibling.
  *
  * This API is primarily meant for widget implementations.
  *
@@ -12076,7 +12158,7 @@ gtk_widget_get_next_sibling (GtkWidget *widget)
  * gtk_widget_get_prev_sibling:
  * @widget: a `GtkWidget`
  *
- * Returns the widgets previous sibling.
+ * Returns the widget’s previous sibling.
  *
  * This API is primarily meant for widget implementations.
  *
@@ -12450,6 +12532,9 @@ gtk_widget_get_can_target (GtkWidget *widget)
  *
  * For pointer events, see [method@Gtk.Widget.contains].
  *
+ * To learn more about widget sizes, see the coordinate
+ * system [overview](coordinates.html).
+ *
  * Returns: The width of @widget
  */
 int
@@ -12473,6 +12558,9 @@ gtk_widget_get_width (GtkWidget *widget)
  * should be using in [vfunc@Gtk.Widget.snapshot].
  *
  * For pointer events, see [method@Gtk.Widget.contains].
+ *
+ * To learn more about widget sizes, see the coordinate
+ * system [overview](coordinates.html).
  *
  * Returns: The height of @widget
  */
@@ -12501,18 +12589,23 @@ gtk_widget_get_height (GtkWidget *widget)
  * writing orientation-independent code, such as when
  * implementing [iface@Gtk.Orientable] widgets.
  *
+ * To learn more about widget sizes, see the coordinate
+ * system [overview](coordinates.html).
+ *
  * Returns: The size of @widget in @orientation.
  */
 int
 gtk_widget_get_size (GtkWidget      *widget,
                      GtkOrientation  orientation)
 {
+  GtkWidgetPrivate *priv = gtk_widget_get_instance_private (widget);
+
   g_return_val_if_fail (GTK_IS_WIDGET (widget), 0);
 
   if (orientation == GTK_ORIENTATION_HORIZONTAL)
-    return gtk_widget_get_width (widget);
+    return priv->width;
   else
-    return gtk_widget_get_height (widget);
+    return priv->height;
 }
 
 /**
@@ -12895,7 +12988,7 @@ gtk_widget_get_css_name (GtkWidget *self)
  *
  * Adds a style class to @widget.
  *
- * After calling this function, the widgets style will match
+ * After calling this function, the widget’s style will match
  * for @css_class, according to CSS matching rules.
  *
  * Use [method@Gtk.Widget.remove_css_class] to remove the
@@ -13034,11 +13127,11 @@ gtk_widget_set_css_classes (GtkWidget   *widget,
  * @widget: a `GtkWidget`
  * @color: (out): return location for the color
  *
- * Gets the current foreground color for the widgets
+ * Gets the current foreground color for the widget’s
  * CSS style.
  *
  * This function should only be used in snapshot
- * implementations that need need to do custom
+ * implementations that need to do custom
  * drawing with the foreground color.
  *
  * Since: 4.10
@@ -13103,6 +13196,7 @@ gtk_widget_class_set_accessible_role (GtkWidgetClass    *widget_class,
   GtkWidgetClassPrivate *priv;
 
   g_return_if_fail (GTK_IS_WIDGET_CLASS (widget_class));
+  g_return_if_fail (!gtk_accessible_role_is_abstract (accessible_role));
 
   priv = widget_class->priv;
   priv->accessible_role = accessible_role;
@@ -13124,12 +13218,9 @@ gtk_widget_class_set_accessible_role (GtkWidgetClass    *widget_class,
 GtkAccessibleRole
 gtk_widget_class_get_accessible_role (GtkWidgetClass *widget_class)
 {
-  GtkWidgetClassPrivate *priv;
+  g_return_val_if_fail (GTK_IS_WIDGET_CLASS (widget_class), GTK_ACCESSIBLE_ROLE_GENERIC);
 
-  g_return_val_if_fail (GTK_IS_WIDGET_CLASS (widget_class), GTK_ACCESSIBLE_ROLE_WIDGET);
-
-  priv = widget_class->priv;
-  return priv->accessible_role;
+  return widget_class->priv->accessible_role;
 }
 
 void

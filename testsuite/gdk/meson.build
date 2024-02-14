@@ -9,13 +9,11 @@ clipboard_client = executable('clipboard-client',
 tests = [
   { 'name': 'array' },
   { 'name': 'cairo' },
-  { 'name': 'clipboard', 'parallel': false, },
+  { 'name': 'clipboard', 'parallel': false, 'suites': 'flaky' },
   { 'name': 'contentformats' },
   { 'name': 'contentserializer' },
   { 'name': 'cursor' },
-  { 'name': 'display' },
   { 'name': 'displaymanager' },
-  { 'name': 'encoding' },
   { 'name': 'glcontext' },
   { 'name': 'keysyms' },
   { 'name': 'memorytexture' },
@@ -23,7 +21,16 @@ tests = [
   { 'name': 'rgba' },
   { 'name': 'seat' },
   { 'name': 'texture-threads' },
+  { 'name': 'toplevellayout' },
+  { 'name': 'popuplayout' },
 ]
+
+if x11_enabled
+  tests += [
+    { 'name': 'display' },
+    { 'name': 'encoding' },
+  ]
+endif
 
 foreach t : tests
   test_name = t.get('name')
@@ -50,18 +57,30 @@ foreach t : tests
 endforeach
 
 internal_tests = [
-  'image',
-  'texture',
+  { 'name': 'image' },
+  { 'name': 'texture' },
+  { 'name': 'gltexture' },
+  { 'name': 'subsurface' },
 ]
 
+if os_linux
+  internal_tests += { 'name': 'dmabufformats' }
+  internal_tests += { 'name': 'dmabuftexture', 'suites': 'failing' }
+endif
+
+
 foreach t : internal_tests
-  test_exe = executable(t, '@0@.c'.format(t),
-    c_args: common_cflags,
+  test_name = t.get('name')
+  test_exe = executable(test_name,
+    sources: '@0@.c'.format(test_name),
+    c_args: common_cflags + ['-DGTK_COMPILATION'],
     dependencies: libgtk_static_dep,
     install: false,
   )
 
-  test(t, test_exe,
+  suites = ['gdk'] + t.get('suites', [])
+
+  test(test_name, test_exe,
     args: [ '--tap', '-k' ],
     protocol: 'tap',
     env: [
@@ -69,6 +88,6 @@ foreach t : internal_tests
       'G_TEST_BUILDDIR=@0@'.format(meson.current_build_dir()),
       'DBUS_SESSION_BUS_ADDRESS=',
     ],
-    suite: 'gdk',
+    suite: suites,
   )
 endforeach

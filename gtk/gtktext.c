@@ -79,9 +79,9 @@
  * The `GtkText` widget is a single-line text entry widget.
  *
  * `GtkText` is the common implementation of single-line text editing
- * that is shared between `GtkEntry`, `GtkPasswordEntry`, `GtkSpinButton`
- * and other widgets. In all of these, `GtkText` is used as the delegate
- * for the [iface@Gtk.Editable] implementation.
+ * that is shared between [class@Gtk.Entry], [class@Gtk.PasswordEntry],
+ * [class@Gtk.SpinButton], and other widgets. In all of these, `GtkText` is
+ * used as the delegate for the [iface@Gtk.Editable] implementation.
  *
  * A fairly large set of key bindings are supported by default. If the
  * entered text is longer than the allocation of the widget, the widget
@@ -95,10 +95,10 @@
  * [method@Gtk.Text.set_invisible_char].
  *
  * If you are looking to add icons or progress display in an entry, look
- * at `GtkEntry`. There other alternatives for more specialized use cases,
- * such as `GtkSearchEntry`.
+ * at [class@Gtk.Entry]. There other alternatives for more specialized use
+ * cases, such as [class@Gtk.SearchEntry].
  *
- * If you need multi-line editable text, look at `GtkTextView`.
+ * If you need multi-line editable text, look at [class@Gtk.TextView].
  *
  * # CSS nodes
  *
@@ -112,25 +112,25 @@
  * ╰── [window.popup]
  * ```
  *
- * `GtkText` has a main node with the name text. Depending on the properties
- * of the widget, the .read-only style class may appear.
+ * `GtkText` has a main node with the name `text`. Depending on the properties
+ * of the widget, the `.read-only` style class may appear.
  *
- * When the entry has a selection, it adds a subnode with the name selection.
+ * When the entry has a selection, it adds a subnode with the name `selection`.
  *
  * When the entry is in overwrite mode, it adds a subnode with the name
- * block-cursor that determines how the block cursor is drawn.
+ * `block-cursor` that determines how the block cursor is drawn.
  *
- * The CSS node for a context menu is added as a subnode below text as well.
+ * The CSS node for a context menu is added as a subnode with the name `popup`.
  *
- * The undershoot nodes are used to draw the underflow indication when content
- * is scrolled out of view. These nodes get the .left and .right style classes
+ * The `undershoot` nodes are used to draw the underflow indication when content
+ * is scrolled out of view. These nodes get the `.left` or `.right` style class
  * added depending on where the indication is drawn.
  *
  * When touch is used and touch selection handles are shown, they are using
- * CSS nodes with name cursor-handle. They get the .top or .bottom style class
- * depending on where they are shown in relation to the selection. If there is
- * just a single handle for the text cursor, it gets the style class
- * .insertion-cursor.
+ * CSS nodes with name `cursor-handle`. They get the `.top` or `.bottom` style
+ * class depending on where they are shown in relation to the selection. If
+ * there is just a single handle for the text cursor, it gets the style class
+ * `.insertion-cursor`.
  *
  * # Accessibility
  *
@@ -319,6 +319,8 @@ static void   gtk_text_set_property         (GObject      *object,
 static void   gtk_text_get_property         (GObject      *object,
                                              guint         prop_id,
                                              GValue       *value,
+                                             GParamSpec   *pspec);
+static void   gtk_text_notify               (GObject      *object,
                                              GParamSpec   *pspec);
 static void   gtk_text_finalize             (GObject      *object);
 static void   gtk_text_dispose              (GObject      *object);
@@ -738,6 +740,7 @@ gtk_text_class_init (GtkTextClass *class)
   gobject_class->finalize = gtk_text_finalize;
   gobject_class->set_property = gtk_text_set_property;
   gobject_class->get_property = gtk_text_get_property;
+  gobject_class->notify = gtk_text_notify;
 
   widget_class->map = gtk_text_map;
   widget_class->unmap = gtk_text_unmap;
@@ -982,7 +985,7 @@ gtk_text_class_init (GtkTextClass *class)
    * GtkText::activate:
    * @self: The widget on which the signal is emitted
    *
-   * Emitted when the user hits the Enter key.
+   * Emitted when the user hits the <kbd>Enter</kbd> key.
    *
    * The default bindings for this signal are all forms
    * of the <kbd>Enter</kbd> key.
@@ -1021,8 +1024,8 @@ gtk_text_class_init (GtkTextClass *class)
    *
    * - <kbd>←</kbd>, <kbd>→</kbd>, <kbd>↑</kbd>, <kbd>↓</kbd>
    *   move by individual characters/lines
-   * - <kbd>Ctrl</kbd>-<kbd>→</kbd>, etc. move by words/paragraphs
-   * - <kbd>Home</kbd>, <kbd>End</kbd> move to the ends of the buffer
+   * - <kbd>Ctrl</kbd>+<kbd>←</kbd>, etc. move by words/paragraphs
+   * - <kbd>Home</kbd> and <kbd>End</kbd> move to the ends of the buffer
    */
   signals[MOVE_CURSOR] =
     g_signal_new (I_("move-cursor"),
@@ -1035,6 +1038,9 @@ gtk_text_class_init (GtkTextClass *class)
                   GTK_TYPE_MOVEMENT_STEP,
                   G_TYPE_INT,
                   G_TYPE_BOOLEAN);
+  g_signal_set_va_marshaller (signals[MOVE_CURSOR],
+                              G_OBJECT_CLASS_TYPE (gobject_class),
+                              _gtk_marshal_VOID__ENUM_INT_BOOLEANv);
 
   /**
    * GtkText::insert-at-cursor:
@@ -1073,7 +1079,7 @@ gtk_text_class_init (GtkTextClass *class)
    * of characters.
    *
    * The default bindings for this signal are <kbd>Delete</kbd>
-   * for deleting a character and <kbd>Ctrl</kbd>-<kbd>Delete</kbd>
+   * for deleting a character and <kbd>Ctrl</kbd>+<kbd>Delete</kbd>
    * for deleting a word.
    */
   signals[DELETE_FROM_CURSOR] =
@@ -1086,6 +1092,9 @@ gtk_text_class_init (GtkTextClass *class)
                   G_TYPE_NONE, 2,
                   GTK_TYPE_DELETE_TYPE,
                   G_TYPE_INT);
+  g_signal_set_va_marshaller (signals[DELETE_FROM_CURSOR],
+                              G_OBJECT_CLASS_TYPE (gobject_class),
+                              _gtk_marshal_VOID__ENUM_INTv);
 
   /**
    * GtkText::backspace:
@@ -1096,7 +1105,7 @@ gtk_text_class_init (GtkTextClass *class)
    * This is a [keybinding signal](class.SignalAction.html).
    *
    * The default bindings for this signal are
-   * <kbd>Backspace</kbd> and <kbd>Shift</kbd>-<kbd>Backspace</kbd>.
+   * <kbd>Backspace</kbd> and <kbd>Shift</kbd>+<kbd>Backspace</kbd>.
    */
   signals[BACKSPACE] =
     g_signal_new (I_("backspace"),
@@ -1116,8 +1125,8 @@ gtk_text_class_init (GtkTextClass *class)
    * This is a [keybinding signal](class.SignalAction.html).
    *
    * The default bindings for this signal are
-   * <kbd>Ctrl</kbd>-<kbd>x</kbd> and
-   * <kbd>Shift</kbd>-<kbd>Delete</kbd>.
+   * <kbd>Ctrl</kbd>+<kbd>x</kbd> and
+   * <kbd>Shift</kbd>+<kbd>Delete</kbd>.
    */
   signals[CUT_CLIPBOARD] =
     g_signal_new (I_("cut-clipboard"),
@@ -1137,8 +1146,8 @@ gtk_text_class_init (GtkTextClass *class)
    * This is a [keybinding signal](class.SignalAction.html).
    *
    * The default bindings for this signal are
-   * <kbd>Ctrl</kbd>-<kbd>c</kbd> and
-   * <kbd>Ctrl</kbd>-<kbd>Insert</kbd>.
+   * <kbd>Ctrl</kbd>+<kbd>c</kbd> and
+   * <kbd>Ctrl</kbd>+<kbd>Insert</kbd>.
    */
   signals[COPY_CLIPBOARD] =
     g_signal_new (I_("copy-clipboard"),
@@ -1158,7 +1167,7 @@ gtk_text_class_init (GtkTextClass *class)
    * This is a [keybinding signal](class.SignalAction.html).
    *
    * The default bindings for this signal are
-   * <kbd>Ctrl</kbd>-<kbd>v</kbd> and <kbd>Shift</kbd>-<kbd>Insert</kbd>.
+   * <kbd>Ctrl</kbd>+<kbd>v</kbd> and <kbd>Shift</kbd>+<kbd>Insert</kbd>.
    */
   signals[PASTE_CLIPBOARD] =
     g_signal_new (I_("paste-clipboard"),
@@ -1218,8 +1227,8 @@ gtk_text_class_init (GtkTextClass *class)
    * This is a [keybinding signal](class.SignalAction.html).
    *
    * The default bindings for this signal are
-   * <kbd>Ctrl</kbd>-<kbd>.</kbd> and
-   * <kbd>Ctrl</kbd>-<kbd>;</kbd>
+   * <kbd>Ctrl</kbd>+<kbd>.</kbd> and
+   * <kbd>Ctrl</kbd>+<kbd>;</kbd>
    */
   signals[INSERT_EMOJI] =
     g_signal_new (I_("insert-emoji"),
@@ -1813,6 +1822,17 @@ gtk_text_get_property (GObject    *object,
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
     }
+}
+
+static void
+gtk_text_notify (GObject    *object,
+                 GParamSpec *pspec)
+{
+  if (pspec->name == I_("has-focus"))
+    gtk_text_check_cursor_blink (GTK_TEXT (object));
+
+  if (G_OBJECT_CLASS (gtk_text_parent_class)->notify)
+    G_OBJECT_CLASS (gtk_text_parent_class)->notify (object, pspec);
 }
 
 static void
@@ -2692,6 +2712,10 @@ gtk_text_do_popup (GtkText *self,
       gtk_popover_set_has_arrow (GTK_POPOVER (priv->popup_menu), FALSE);
       gtk_widget_set_halign (priv->popup_menu, GTK_ALIGN_START);
 
+      gtk_accessible_update_property (GTK_ACCESSIBLE (priv->popup_menu),
+                                      GTK_ACCESSIBLE_PROPERTY_LABEL, _("Context menu"),
+                                      -1);
+
       g_object_unref (model);
     }
 
@@ -2721,6 +2745,16 @@ gtk_text_click_gesture_pressed (GtkGestureClick *gesture,
   guint button;
   int tmp_pos;
 
+  if (!gtk_widget_has_focus (widget))
+    {
+      if (!gtk_widget_get_focus_on_click (widget))
+        return;
+      priv->in_click = TRUE;
+      gtk_widget_grab_focus (widget);
+      gtk_gesture_set_state (GTK_GESTURE (gesture), GTK_EVENT_SEQUENCE_CLAIMED);
+      priv->in_click = FALSE;
+    }
+
   button = gtk_gesture_single_get_current_button (GTK_GESTURE_SINGLE (gesture));
   current = gtk_gesture_single_get_current_sequence (GTK_GESTURE_SINGLE (gesture));
   event = gtk_gesture_get_last_event (GTK_GESTURE (gesture), current);
@@ -2728,14 +2762,6 @@ gtk_text_click_gesture_pressed (GtkGestureClick *gesture,
   x = gesture_get_current_point_in_layout (GTK_GESTURE_SINGLE (gesture), self);
   y = widget_y;
   gtk_text_reset_blink_time (self);
-
-  if (!gtk_widget_has_focus (widget))
-    {
-      priv->in_click = TRUE;
-      gtk_widget_grab_focus (widget);
-      gtk_gesture_set_state (GTK_GESTURE (gesture), GTK_EVENT_SEQUENCE_CLAIMED);
-      priv->in_click = FALSE;
-    }
 
   tmp_pos = gtk_text_find_position (self, x);
 
@@ -2773,8 +2799,7 @@ gtk_text_click_gesture_pressed (GtkGestureClick *gesture,
       have_selection = sel_start != sel_end;
 
       source = gdk_event_get_device (event);
-      is_touchscreen = gtk_simulate_touchscreen () ||
-                       gdk_device_get_source (source) == GDK_SOURCE_TOUCHSCREEN;
+      is_touchscreen = gdk_device_get_source (source) == GDK_SOURCE_TOUCHSCREEN;
 
       priv->text_handles_enabled = is_touchscreen;
 
@@ -3137,8 +3162,7 @@ gtk_text_drag_gesture_update (GtkGestureDrag *gesture,
       gtk_text_set_positions (self, pos, bound);
 
       /* Update touch handles' position */
-      if (gtk_simulate_touchscreen () ||
-          input_source == GDK_SOURCE_TOUCHSCREEN)
+      if (input_source == GDK_SOURCE_TOUCHSCREEN)
         {
           priv->text_handles_enabled = TRUE;
           gtk_text_update_handles (self);
@@ -3260,6 +3284,7 @@ gtk_text_focus_changed (GtkEventControllerFocus *controller,
       gtk_text_im_set_focus_in (self);
       gtk_text_reset_blink_time (self);
       gtk_text_check_cursor_blink (self);
+      gtk_text_update_primary_selection (self);
     }
   else /* Focus out */
     {
@@ -3954,9 +3979,11 @@ gtk_text_insert_at_cursor (GtkText    *self,
 
   if (priv->editable)
     {
+      begin_change (self);
       gtk_text_reset_im_context (self);
       gtk_editable_insert_text (GTK_EDITABLE (self), str, -1, &pos);
       gtk_text_set_selection_bounds (self, pos, pos);
+      end_change (self);
     }
 }
 
@@ -3976,12 +4003,14 @@ gtk_text_delete_from_cursor (GtkText       *self,
       return;
     }
 
+  begin_change (self);
+
   if (priv->selection_bound != priv->current_pos)
     {
       gtk_text_delete_selection (self);
       gtk_text_schedule_im_reset (self);
       gtk_text_reset_im_context (self);
-      return;
+      goto done;
     }
 
   switch (type)
@@ -4051,6 +4080,8 @@ gtk_text_delete_from_cursor (GtkText       *self,
       gtk_text_reset_im_context (self);
     }
 
+done:
+  end_change (self);
   gtk_text_pend_cursor_blink (self);
 }
 
@@ -4066,12 +4097,14 @@ gtk_text_backspace (GtkText *self)
       return;
     }
 
+  begin_change (self);
+
   if (priv->selection_bound != priv->current_pos)
     {
       gtk_text_delete_selection (self);
       gtk_text_schedule_im_reset (self);
       gtk_text_reset_im_context (self);
-      return;
+      goto done;
     }
 
   prev_pos = gtk_text_move_logically (self, priv->current_pos, -1);
@@ -4124,6 +4157,8 @@ gtk_text_backspace (GtkText *self)
       gtk_widget_error_bell (GTK_WIDGET (self));
     }
 
+done:
+  end_change (self);
   gtk_text_pend_cursor_blink (self);
 }
 
@@ -4168,7 +4203,11 @@ gtk_text_cut_clipboard (GtkText *self)
   if (priv->editable)
     {
       if (priv->selection_bound != priv->current_pos)
-        gtk_text_delete_selection (self);
+        {
+          begin_change (self);
+          gtk_text_delete_selection (self);
+          end_change (self);
+        }
     }
   else
     {
@@ -4186,9 +4225,15 @@ gtk_text_paste_clipboard (GtkText *self)
   GtkTextPrivate *priv = gtk_text_get_instance_private (self);
 
   if (priv->editable)
-    gtk_text_paste (self, gtk_widget_get_clipboard (GTK_WIDGET (self)));
+    {
+      begin_change (self);
+      gtk_text_paste (self, gtk_widget_get_clipboard (GTK_WIDGET (self)));
+      end_change (self);
+    }
   else
-    gtk_widget_error_bell (GTK_WIDGET (self));
+    {
+      gtk_widget_error_bell (GTK_WIDGET (self));
+    }
 
   gtk_text_update_handles (self);
 }
@@ -5364,6 +5409,9 @@ gtk_text_update_primary_selection (GtkText *self)
   if (!gtk_widget_get_realized (GTK_WIDGET (self)))
     return;
 
+  if (!gtk_widget_has_focus (GTK_WIDGET (self)))
+    return;
+
   clipboard = gtk_widget_get_primary_clipboard (GTK_WIDGET (self));
 
   if (priv->selection_bound != priv->current_pos)
@@ -6216,7 +6264,7 @@ gtk_text_selection_bubble_popup_show (gpointer user_data)
   const int text_width = gtk_widget_get_width (GTK_WIDGET (self));
   const int text_height = gtk_widget_get_height (GTK_WIDGET (self));
   cairo_rectangle_int_t rect;
-  GtkAllocation allocation;
+  graphene_point_t p;
   gboolean has_selection;
   int start_x, end_x;
   GtkWidget *box;
@@ -6261,13 +6309,15 @@ gtk_text_selection_bubble_popup_show (gpointer user_data)
 
   g_object_unref (model);
 
-  gtk_widget_get_allocation (GTK_WIDGET (self), &allocation);
+  if (!gtk_widget_compute_point (GTK_WIDGET (self), gtk_widget_get_parent (GTK_WIDGET (self)),
+                                 &GRAPHENE_POINT_INIT (0, 0), &p))
+    graphene_point_init (&p, 0, 0);
 
   gtk_text_get_cursor_locations (self, &start_x, NULL);
 
   start_x -= priv->scroll_offset;
   start_x = CLAMP (start_x, 0, text_width);
-  rect.y = - allocation.y;
+  rect.y = - p.y;
   rect.height = text_height;
 
   if (has_selection)
@@ -6275,12 +6325,12 @@ gtk_text_selection_bubble_popup_show (gpointer user_data)
       end_x = gtk_text_get_selection_bound_location (self) - priv->scroll_offset;
       end_x = CLAMP (end_x, 0, text_width);
 
-      rect.x = - allocation.x + MIN (start_x, end_x);
+      rect.x = - p.x + MIN (start_x, end_x);
       rect.width = ABS (end_x - start_x);
     }
   else
     {
-      rect.x = - allocation.x + start_x;
+      rect.x = - p.x + start_x;
       rect.width = 0;
     }
 
@@ -6451,8 +6501,11 @@ static gboolean
 cursor_blinks (GtkText *self)
 {
   GtkTextPrivate *priv = gtk_text_get_instance_private (self);
+  GtkRoot *root = gtk_widget_get_root (GTK_WIDGET (self));
 
-  if (gtk_event_controller_focus_is_focus (GTK_EVENT_CONTROLLER_FOCUS (priv->focus_controller)) &&
+  if (gtk_widget_get_mapped (GTK_WIDGET (self)) &&
+      gtk_window_is_active (GTK_WINDOW (root)) &&
+      gtk_event_controller_focus_is_focus (GTK_EVENT_CONTROLLER_FOCUS (priv->focus_controller)) &&
       priv->editable &&
       priv->selection_bound == priv->current_pos)
     {
@@ -6696,6 +6749,7 @@ gtk_text_set_placeholder_text (GtkText    *self,
                                         "css-name", "placeholder",
                                         "xalign", priv->xalign,
                                         "ellipsize", PANGO_ELLIPSIZE_END,
+                                        "max-width-chars", 3,
                                         NULL);
       gtk_label_set_attributes (GTK_LABEL (priv->placeholder), priv->attrs);
       gtk_widget_insert_after (priv->placeholder, GTK_WIDGET (self), NULL);

@@ -1002,7 +1002,7 @@ gtk_text_view_class_init (GtkTextViewClass *klass)
    * A negative value of indent will produce a hanging indentation.
    * That is, the first line will have the full width, and subsequent
    * lines will be indented by the absolute value of indent.
-   * 
+   *
    */
   g_object_class_install_property (gobject_class,
                                    PROP_INDENT,
@@ -1171,10 +1171,10 @@ gtk_text_view_class_init (GtkTextViewClass *klass)
    *
    * - <kbd>←</kbd>, <kbd>→</kbd>, <kbd>↑</kbd>, <kbd>↓</kbd>
    *   move by individual characters/lines
-   * - <kbd>Ctrl</kbd>-<kbd>→</kbd>, etc. move by words/paragraphs
-   * - <kbd>Home</kbd>, <kbd>End</kbd> move to the ends of the buffer
-   * - <kbd>PgUp</kbd>, <kbd>PgDn</kbd> move vertically by pages
-   * - <kbd>Ctrl</kbd>-<kbd>PgUp</kbd>, <kbd>Ctrl</kbd>-<kbd>PgDn</kbd>
+   * - <kbd>Ctrl</kbd>+<kbd>←</kbd>, etc. move by words/paragraphs
+   * - <kbd>Home</kbd> and <kbd>End</kbd> move to the ends of the buffer
+   * - <kbd>PgUp</kbd> and <kbd>PgDn</kbd> move vertically by pages
+   * - <kbd>Ctrl</kbd>+<kbd>PgUp</kbd> and <kbd>Ctrl</kbd>+<kbd>PgDn</kbd>
    *   move horizontally by pages
    */
   signals[MOVE_CURSOR] =
@@ -1280,8 +1280,8 @@ gtk_text_view_class_init (GtkTextViewClass *klass)
    * of characters.
    *
    * The default bindings for this signal are <kbd>Delete</kbd> for
-   * deleting a character, <kbd>Ctrl</kbd>-<kbd>Delete</kbd> for
-   * deleting a word and <kbd>Ctrl</kbd>-<kbd>Backspace</kbd> for
+   * deleting a character, <kbd>Ctrl</kbd>+<kbd>Delete</kbd> for
+   * deleting a word and <kbd>Ctrl</kbd>+<kbd>Backspace</kbd> for
    * deleting a word backwards.
    */
   signals[DELETE_FROM_CURSOR] =
@@ -1307,7 +1307,7 @@ gtk_text_view_class_init (GtkTextViewClass *klass)
    * The ::backspace signal is a [keybinding signal](class.SignalAction.html).
    *
    * The default bindings for this signal are
-   * <kbd>Backspace</kbd> and <kbd>Shift</kbd>-<kbd>Backspace</kbd>.
+   * <kbd>Backspace</kbd> and <kbd>Shift</kbd>+<kbd>Backspace</kbd>.
    */
   signals[BACKSPACE] =
     g_signal_new (I_("backspace"),
@@ -1327,8 +1327,8 @@ gtk_text_view_class_init (GtkTextViewClass *klass)
    * The ::cut-clipboard signal is a [keybinding signal](class.SignalAction.html).
    *
    * The default bindings for this signal are
-   * <kbd>Ctrl</kbd>-<kbd>x</kbd> and
-   * <kbd>Shift</kbd>-<kbd>Delete</kbd>.
+   * <kbd>Ctrl</kbd>+<kbd>x</kbd> and
+   * <kbd>Shift</kbd>+<kbd>Delete</kbd>.
    */
   signals[CUT_CLIPBOARD] =
     g_signal_new (I_("cut-clipboard"),
@@ -1348,8 +1348,8 @@ gtk_text_view_class_init (GtkTextViewClass *klass)
    * The ::copy-clipboard signal is a [keybinding signal](class.SignalAction.html).
    *
    * The default bindings for this signal are
-   * <kbd>Ctrl</kbd>-<kbd>c</kbd> and
-   * <kbd>Ctrl</kbd>-<kbd>Insert</kbd>.
+   * <kbd>Ctrl</kbd>+<kbd>c</kbd> and
+   * <kbd>Ctrl</kbd>+<kbd>Insert</kbd>.
    */
   signals[COPY_CLIPBOARD] =
     g_signal_new (I_("copy-clipboard"),
@@ -1370,8 +1370,8 @@ gtk_text_view_class_init (GtkTextViewClass *klass)
    * The ::paste-clipboard signal is a [keybinding signal](class.SignalAction.html).
    *
    * The default bindings for this signal are
-   * <kbd>Ctrl</kbd>-<kbd>v</kbd> and
-   * <kbd>Shift</kbd>-<kbd>Insert</kbd>.
+   * <kbd>Ctrl</kbd>+<kbd>v</kbd> and
+   * <kbd>Shift</kbd>+<kbd>Insert</kbd>.
    */
   signals[PASTE_CLIPBOARD] =
     g_signal_new (I_("paste-clipboard"),
@@ -1411,10 +1411,10 @@ gtk_text_view_class_init (GtkTextViewClass *klass)
    * The ::select-all signal is a [keybinding signal](class.SignalAction.html).
    *
    * The default bindings for this signal are
-   * <kbd>Ctrl</kbd>-<kbd>a</kbd> and
-   * <kbd>Ctrl</kbd>-<kbd>/</kbd> for selecting and
-   * <kbd>Shift</kbd>-<kbd>Ctrl</kbd>-<kbd>a</kbd> and
-   * <kbd>Ctrl</kbd>-<kbd>\</kbd> for unselecting.
+   * <kbd>Ctrl</kbd>+<kbd>a</kbd> and
+   * <kbd>Ctrl</kbd>+<kbd>/</kbd> for selecting and
+   * <kbd>Shift</kbd>+<kbd>Ctrl</kbd>+<kbd>a</kbd> and
+   * <kbd>Ctrl</kbd>+<kbd>\</kbd> for unselecting.
    */
   signals[SELECT_ALL] =
     g_signal_new_class_handler (I_("select-all"),
@@ -1507,8 +1507,8 @@ gtk_text_view_class_init (GtkTextViewClass *klass)
    * The ::insert-emoji signal is a [keybinding signal](class.SignalAction.html).
    *
    * The default bindings for this signal are
-   * <kbd>Ctrl</kbd>-<kbd>.</kbd> and
-   * <kbd>Ctrl</kbd>-<kbd>;</kbd>
+   * <kbd>Ctrl</kbd>+<kbd>.</kbd> and
+   * <kbd>Ctrl</kbd>+<kbd>;</kbd>
    */
   signals[INSERT_EMOJI] =
     g_signal_new (I_("insert-emoji"),
@@ -2024,6 +2024,7 @@ gtk_text_view_init (GtkTextView *text_view)
 
   gtk_accessible_update_property (GTK_ACCESSIBLE (widget),
                                   GTK_ACCESSIBLE_PROPERTY_MULTI_LINE, TRUE,
+                                  GTK_ACCESSIBLE_PROPERTY_HAS_POPUP, TRUE,
                                   -1);
 }
 
@@ -3759,7 +3760,7 @@ gtk_text_view_toggle_cursor_visible (GtkTextView *text_view)
  * cursor, so you may want to turn the cursor off.
  *
  * Note that this property may be overridden by the
- * [property@GtkSettings:gtk-keynav-use-caret] setting.
+ * [property@Gtk.Settings:gtk-keynav-use-caret] setting.
  */
 void
 gtk_text_view_set_cursor_visible (GtkTextView *text_view,
@@ -5248,12 +5249,9 @@ gtk_text_view_show_magnifier (GtkTextView *text_view,
 {
   cairo_rectangle_int_t rect;
   GtkTextViewPrivate *priv;
-  GtkAllocation allocation;
   GtkRequisition req;
 
 #define N_LINES 1
-
-  gtk_widget_get_allocation (GTK_WIDGET (text_view), &allocation);
 
   priv = text_view->priv;
   _gtk_text_view_ensure_magnifier (text_view);
@@ -5273,11 +5271,10 @@ gtk_text_view_show_magnifier (GtkTextView *text_view,
   _gtk_magnifier_set_coords (GTK_MAGNIFIER (priv->magnifier),
                              rect.x, rect.y + rect.height / 2);
 
-  rect.x = CLAMP (rect.x, 0, allocation.width);
+  rect.x = CLAMP (rect.x, 0, gtk_widget_get_width (GTK_WIDGET (text_view)));
   rect.y += rect.height / 4;
   rect.height -= rect.height / 4;
-  gtk_popover_set_pointing_to (GTK_POPOVER (priv->magnifier_popover),
-                               &rect);
+  gtk_popover_set_pointing_to (GTK_POPOVER (priv->magnifier_popover), &rect);
 
   gtk_popover_popup (GTK_POPOVER (priv->magnifier_popover));
 
@@ -5601,8 +5598,7 @@ gtk_text_view_click_gesture_pressed (GtkGestureClick *gesture,
   gtk_text_view_reset_blink_time (text_view);
 
   device = gdk_event_get_device ((GdkEvent *) event);
-  is_touchscreen = gtk_simulate_touchscreen () ||
-                   gdk_device_get_source (device) == GDK_SOURCE_TOUCHSCREEN;
+  is_touchscreen = gdk_device_get_source (device) == GDK_SOURCE_TOUCHSCREEN;
 
   if (n_press == 1)
     {
@@ -5639,6 +5635,26 @@ gtk_text_view_click_gesture_pressed (GtkGestureClick *gesture,
 
       if (state & GDK_SHIFT_MASK)
         extends = TRUE;
+
+      if (n_press > 1)
+	{
+          GtkTextBuffer *buffer;
+          GtkTextIter cur, ins;
+
+          buffer = get_buffer (text_view);
+          get_iter_from_gesture (text_view, GTK_GESTURE (gesture),
+                                 &cur, NULL, NULL);
+          gtk_text_buffer_get_iter_at_mark (buffer, &ins,
+                                            gtk_text_buffer_get_insert (buffer));
+
+          /* Reset count if double/triple clicking on a different line */
+          if (gtk_text_iter_get_line (&cur) !=
+              gtk_text_iter_get_line (&ins))
+            {
+              gtk_event_controller_reset (GTK_EVENT_CONTROLLER (gesture));
+              return;
+            }
+        }
 
       switch (n_press)
         {
@@ -6461,7 +6477,10 @@ gtk_text_view_move_cursor (GtkTextView     *text_view,
         count *= -1;
 
       if (count < 0)
-        gtk_text_iter_backward_visible_word_starts (&newplace, -count);
+        {
+          if (!gtk_text_iter_backward_visible_word_starts (&newplace, -count))
+            gtk_text_iter_set_line_offset (&newplace, 0);
+        }
       else if (count > 0)
 	{
 	  if (!gtk_text_iter_forward_visible_word_ends (&newplace, count))
@@ -6865,16 +6884,13 @@ gtk_text_view_delete_from_cursor (GtkTextView   *text_view,
 
   priv = text_view->priv;
 
-  if (type == GTK_DELETE_CHARS)
+  /* If a selection exists, we operate on it first */
+  if (gtk_text_buffer_delete_selection (get_buffer (text_view), TRUE,
+                                        priv->editable))
     {
-      /* Char delete deletes the selection, if one exists */
-      if (gtk_text_buffer_delete_selection (get_buffer (text_view), TRUE,
-                                            priv->editable))
-        {
-          priv->need_im_reset = TRUE;
-          gtk_text_view_reset_im_context (text_view);
-          return;
-        }
+      priv->need_im_reset = TRUE;
+      gtk_text_view_reset_im_context (text_view);
+      return;
     }
 
   gtk_text_buffer_get_iter_at_mark (get_buffer (text_view), &insert,
@@ -6893,7 +6909,10 @@ gtk_text_view_delete_from_cursor (GtkTextView   *text_view,
       if (count > 0)
         gtk_text_iter_forward_word_ends (&end, count);
       else if (count < 0)
-        gtk_text_iter_backward_word_starts (&start, 0 - count);
+        {
+          if (!gtk_text_iter_backward_word_starts (&start, 0 - count))
+            gtk_text_iter_set_line_offset (&start, 0);
+        }
       break;
 
     case GTK_DELETE_WORDS:
@@ -7173,6 +7192,8 @@ gtk_text_view_set_overwrite (GtkTextView *text_view,
  * If @accepts_tab is %TRUE, a tab character is inserted. If @accepts_tab
  * is %FALSE the keyboard focus is moved to the next widget in the focus
  * chain.
+ *
+ * Focus can always be moved using <kbd>Ctrl</kbd>+<kbd>Tab</kbd>.
  */
 void
 gtk_text_view_set_accepts_tab (GtkTextView *text_view,
@@ -7465,8 +7486,7 @@ gtk_text_view_drag_gesture_update (GtkGestureDrag *gesture,
 
   device = gdk_event_get_device (event);
 
-  is_touchscreen = gtk_simulate_touchscreen () ||
-                   gdk_device_get_source (device) == GDK_SOURCE_TOUCHSCREEN;
+  is_touchscreen = gdk_device_get_source (device) == GDK_SOURCE_TOUCHSCREEN;
 
   get_iter_from_gesture (text_view, text_view->priv->drag_gesture,
                          &cursor, NULL, NULL);
@@ -7607,8 +7627,7 @@ gtk_text_view_drag_gesture_end (GtkGestureDrag *gesture,
 
   event = gtk_gesture_get_last_event (GTK_GESTURE (gesture), sequence);
   device = gdk_event_get_device (event);
-  is_touchscreen = gtk_simulate_touchscreen () ||
-    gdk_device_get_source (device) == GDK_SOURCE_TOUCHSCREEN;
+  is_touchscreen = gdk_device_get_source (device) == GDK_SOURCE_TOUCHSCREEN;
 
   if ((is_touchscreen || clicked_in_selection) &&
       !gtk_drag_check_threshold_double (GTK_WIDGET (text_view), 0, 0, offset_x, offset_y))
@@ -9065,6 +9084,10 @@ gtk_text_view_do_popup (GtkTextView *text_view,
       gtk_popover_set_has_arrow (GTK_POPOVER (priv->popup_menu), FALSE);
       gtk_widget_set_halign (priv->popup_menu, GTK_ALIGN_START);
 
+      gtk_accessible_update_property (GTK_ACCESSIBLE (priv->popup_menu),
+                                      GTK_ACCESSIBLE_PROPERTY_LABEL, _("Context menu"),
+                                      -1);
+
       g_object_unref (model);
     }
 
@@ -9086,18 +9109,20 @@ gtk_text_view_do_popup (GtkTextView *text_view,
           GdkSurface *surface;
           double px, py;
           double nx, ny;
+          graphene_point_t p;
 
           native = gtk_widget_get_native (GTK_WIDGET (text_view));
           surface = gtk_native_get_surface (native);
           gdk_surface_get_device_position (surface, device, &px, &py, NULL);
           gtk_native_get_surface_transform (native, &nx, &ny);
 
-          gtk_widget_translate_coordinates (GTK_WIDGET (gtk_widget_get_native (GTK_WIDGET (text_view))),
-                                           GTK_WIDGET (text_view),
-                                           px - nx, py - ny,
-                                           &px, &py);
-          rect.x = px;
-          rect.y = py;
+          if (!gtk_widget_compute_point (GTK_WIDGET (gtk_widget_get_native (GTK_WIDGET (text_view))),
+                                         GTK_WIDGET (text_view),
+                                         &GRAPHENE_POINT_INIT (px - nx, py - ny),
+                                         &p))
+            graphene_point_init (&p, px - nx, px - nx);
+          rect.x = p.x;
+          rect.y = p.y;
         }
 
       gtk_popover_set_pointing_to (GTK_POPOVER (priv->popup_menu), &rect);
@@ -9229,7 +9254,8 @@ append_bubble_item (GtkTextView *text_view,
   muxer = _gtk_widget_get_action_muxer (GTK_WIDGET (text_view), FALSE);
   if (muxer)
     {
-      gtk_action_muxer_query_action (muxer, action_name, &enabled, &param_type, &state_type, NULL, NULL);
+      if (!gtk_action_muxer_query_action (muxer, action_name, &enabled, &param_type, &state_type, NULL, NULL))
+        return;
 
       if (!enabled)
         return;

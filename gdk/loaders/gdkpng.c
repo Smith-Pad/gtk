@@ -137,8 +137,9 @@ gdk_load_png (GBytes  *bytes,
   png_struct *png = NULL;
   png_info *info;
   guint width, height;
+  gsize i, stride;
   int depth, color_type;
-  int interlace, stride;
+  int interlace;
   GdkMemoryFormat format;
   guchar *buffer = NULL;
   guchar **row_pointers = NULL;
@@ -183,8 +184,7 @@ gdk_load_png (GBytes  *bytes,
   if (color_type == PNG_COLOR_TYPE_PALETTE)
     png_set_palette_to_rgb (png);
 
-  if (color_type == PNG_COLOR_TYPE_GRAY ||
-      color_type == PNG_COLOR_TYPE_GRAY_ALPHA)
+  if (color_type == PNG_COLOR_TYPE_GRAY)
     png_set_expand_gray_1_2_4_to_8 (png);
 
   if (png_get_valid (png, info, PNG_INFO_tRNS))
@@ -192,10 +192,6 @@ gdk_load_png (GBytes  *bytes,
 
   if (depth < 8)
     png_set_packing (png);
-
-  if (color_type == PNG_COLOR_TYPE_GRAY ||
-      color_type == PNG_COLOR_TYPE_GRAY_ALPHA)
-    png_set_gray_to_rgb (png);
 
   if (interlace != PNG_INTERLACE_NONE)
     png_set_interlace_handling (png);
@@ -239,6 +235,26 @@ gdk_load_png (GBytes  *bytes,
           format = GDK_MEMORY_R16G16B16;
         }
       break;
+    case PNG_COLOR_TYPE_GRAY:
+      if (depth == 8)
+        {
+          format = GDK_MEMORY_G8;
+        }
+      else if (depth == 16)
+        {
+          format = GDK_MEMORY_G16;
+        }
+      break;
+    case PNG_COLOR_TYPE_GRAY_ALPHA:
+      if (depth == 8)
+        {
+          format = GDK_MEMORY_G8A8;
+        }
+      else if (depth == 16)
+        {
+          format = GDK_MEMORY_G16A16;
+        }
+      break;
     default:
       png_destroy_read_struct (&png, &info, NULL);
       g_set_error (error,
@@ -248,9 +264,14 @@ gdk_load_png (GBytes  *bytes,
     }
 
   bpp = gdk_memory_format_bytes_per_pixel (format);
-  stride = width * bpp;
-  if (stride % 8)
-    stride += 8 - stride % 8;
+  if (!g_size_checked_mul (&stride, width, bpp) ||
+      !g_size_checked_add (&stride, stride, (8 - stride % 8) % 8))
+    {
+      g_set_error (error,
+                   GDK_TEXTURE_ERROR, GDK_TEXTURE_ERROR_TOO_LARGE,
+                   _("Image stride too large for image size %ux%u"), width, height);
+      return NULL;
+    }
 
   buffer = g_try_malloc_n (height, stride);
   row_pointers = g_try_malloc_n (height, sizeof (char *));
@@ -266,7 +287,7 @@ gdk_load_png (GBytes  *bytes,
       return NULL;
     }
 
-  for (int i = 0; i < height; i++)
+  for (i = 0; i < height; i++)
     row_pointers[i] = &buffer[i * stride];
 
   png_read_image (png, row_pointers);
@@ -283,7 +304,7 @@ gdk_load_png (GBytes  *bytes,
     {
       gint64 end = GDK_PROFILER_CURRENT_TIME;
       if (end - before > 500000)
-        gdk_profiler_add_mark (before, end - before, "png load", NULL);
+        gdk_profiler_add_mark (before, end - before, "Load png", NULL);
     }
 
   return texture;
@@ -314,6 +335,7 @@ gdk_save_png (GdkTexture *texture)
     case GDK_MEMORY_B8G8R8A8_PREMULTIPLIED:
     case GDK_MEMORY_A8R8G8B8_PREMULTIPLIED:
     case GDK_MEMORY_R8G8B8A8_PREMULTIPLIED:
+    case GDK_MEMORY_A8B8G8R8_PREMULTIPLIED:
     case GDK_MEMORY_B8G8R8A8:
     case GDK_MEMORY_A8R8G8B8:
     case GDK_MEMORY_R8G8B8A8:
@@ -325,6 +347,10 @@ gdk_save_png (GdkTexture *texture)
 
     case GDK_MEMORY_R8G8B8:
     case GDK_MEMORY_B8G8R8:
+    case GDK_MEMORY_R8G8B8X8:
+    case GDK_MEMORY_X8R8G8B8:
+    case GDK_MEMORY_B8G8R8X8:
+    case GDK_MEMORY_X8B8G8R8:
       format = GDK_MEMORY_R8G8B8;
       png_format = PNG_COLOR_TYPE_RGB;
       depth = 8;
@@ -349,6 +375,36 @@ gdk_save_png (GdkTexture *texture)
       depth = 16;
       break;
 
+    case GDK_MEMORY_G8:
+      format = GDK_MEMORY_G8;
+      png_format = PNG_COLOR_TYPE_GRAY;
+      depth = 8;
+      break;
+
+    case GDK_MEMORY_G8A8_PREMULTIPLIED:
+    case GDK_MEMORY_G8A8:
+    case GDK_MEMORY_A8:
+      format = GDK_MEMORY_G8A8;
+      png_format = PNG_COLOR_TYPE_GRAY_ALPHA;
+      depth = 8;
+      break;
+
+    case GDK_MEMORY_G16:
+      format = GDK_MEMORY_G16;
+      png_format = PNG_COLOR_TYPE_GRAY;
+      depth = 16;
+      break;
+
+    case GDK_MEMORY_G16A16_PREMULTIPLIED:
+    case GDK_MEMORY_G16A16:
+    case GDK_MEMORY_A16:
+    case GDK_MEMORY_A16_FLOAT:
+    case GDK_MEMORY_A32_FLOAT:
+      format = GDK_MEMORY_G16A16;
+      png_format = PNG_COLOR_TYPE_GRAY_ALPHA;
+      depth = 16;
+      break;
+
     case GDK_MEMORY_N_FORMATS:
     default:
       g_assert_not_reached ();
@@ -362,6 +418,9 @@ gdk_save_png (GdkTexture *texture)
                                    png_free_callback);
   if (!png)
     return NULL;
+
+  /* 2^31-1 is the maximum size for PNG files */
+  png_set_user_limits (png, (1u << 31) - 1, (1u << 31) - 1);
 
   info = png_create_info_struct (png);
   if (!info)

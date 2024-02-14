@@ -71,7 +71,7 @@
  *
  * ![An example GtkLabel](label.png)
  *
- * # CSS nodes
+ * ## CSS nodes
  *
  * ```
  * label
@@ -92,15 +92,16 @@
  * carry the link or visited state depending on whether they have been
  * visited. In this case, label node also gets a .link style class.
  *
- * # GtkLabel as GtkBuildable
+ * ## GtkLabel as GtkBuildable
  *
  * The GtkLabel implementation of the GtkBuildable interface supports a
  * custom `<attributes>` element, which supports any number of `<attribute>`
- * elements. The <attribute> element has attributes named “name“, “value“,
+ * elements. The `<attribute>` element has attributes named “name“, “value“,
  * “start“ and “end“ and allows you to specify [struct@Pango.Attribute]
  * values for this label.
  *
  * An example of a UI definition fragment specifying Pango attributes:
+ *
  * ```xml
  * <object class="GtkLabel">
  *   <attributes>
@@ -116,11 +117,11 @@
  * sense with translatable attributes. Use markup embedded in the translatable
  * content instead.
  *
- * # Accessibility
+ * ## Accessibility
  *
  * `GtkLabel` uses the %GTK_ACCESSIBLE_ROLE_LABEL role.
  *
- * # Mnemonics
+ * ## Mnemonics
  *
  * Labels may contain “mnemonics”. Mnemonics are underlined characters in the
  * label, used for keyboard navigation. Mnemonics are created by providing a
@@ -131,8 +132,9 @@
  * Mnemonics automatically activate any activatable widget the label is
  * inside, such as a [class@Gtk.Button]; if the label is not inside the
  * mnemonic’s target widget, you have to tell the label about the target
- * using [class@Gtk.Label.set_mnemonic_widget]. Here’s a simple example where
- * the label is inside a button:
+ * using [method@Gtk.Label.set_mnemonic_widget].
+ *
+ * Here’s a simple example where the label is inside a button:
  *
  * ```c
  * // Pressing Alt+H will activate this button
@@ -160,7 +162,7 @@
  * gtk_label_set_mnemonic_widget (GTK_LABEL (label), entry);
  * ```
  *
- * # Markup (styled text)
+ * ## Markup (styled text)
  *
  * To make it easy to format text in a label (changing colors,
  * fonts, etc.), label text can be provided in a simple
@@ -175,11 +177,11 @@
  * (See the Pango manual for complete documentation] of available
  * tags, [func@Pango.parse_markup])
  *
- * The markup passed to gtk_label_set_markup() must be valid; for example,
- * literal <, > and & characters must be escaped as &lt;, &gt;, and &amp;.
+ * The markup passed to [method@Gtk.Label.set_markup] must be valid; for example,
+ * literal `<`, `>` and `&` characters must be escaped as `&lt;`, `&gt;`, and `&amp;`.
  * If you pass text obtained from the user, file, or a network to
  * [method@Gtk.Label.set_markup], you’ll want to escape it with
- * g_markup_escape_text() or g_markup_printf_escaped().
+ * [func@GLib.markup_escape_text] or [func@GLib.markup_printf_escaped].
  *
  * Markup strings are just a convenient way to set the [struct@Pango.AttrList]
  * on a label; [method@Gtk.Label.set_attributes] may be a simpler way to set
@@ -190,14 +192,14 @@
  * end_index for a [struct@Pango.Attribute] requires knowledge of the exact
  * string being displayed, so translations will cause problems.
  *
- * # Selectable labels
+ * ## Selectable labels
  *
  * Labels can be made selectable with [method@Gtk.Label.set_selectable].
  * Selectable labels allow the user to copy the label contents to
- * the clipboard. Only labels that contain useful-to-copy information
- * — such as error messages — should be made selectable.
+ * the clipboard. Only labels that contain useful-to-copy information—such
+ * as error messages—should be made selectable.
  *
- * # Text layout
+ * ## Text layout
  *
  * A label can contain any number of paragraphs, but will have
  * performance problems if it contains more than a small number.
@@ -220,7 +222,7 @@
  * is used as the natural width. Even if max-width-chars specified, wrapping
  * labels will be rewrapped to use all of the available width.
  *
- * # Links
+ * ## Links
  *
  * GTK supports markup for clickable hyperlinks in addition to regular Pango
  * markup. The markup for links is borrowed from HTML, using the `<a>` with
@@ -229,7 +231,7 @@
  * attribute is displayed as a tooltip on the link. The “class“ attribute is
  * used as style class on the CSS node for the link.
  *
- * An example looks like this:
+ * An example of inline links looks like this:
  *
  * ```c
  * const char *text =
@@ -1202,7 +1204,7 @@ my_pango_layout_get_width_for_height (PangoLayout *layout,
       else if (text_height > for_height)
         min = mid + 1;
       else
-        max = mid;
+        max = text_width;
     }
 
   return min * PANGO_SCALE;
@@ -1313,8 +1315,8 @@ gtk_label_measure (GtkWidget      *widget,
 
 static void
 get_layout_location (GtkLabel  *self,
-                     int       *xp,
-                     int       *yp)
+                     float     *xp,
+                     float     *yp)
 {
   GtkWidget *widget = GTK_WIDGET (self);
   const int widget_width = gtk_widget_get_width (widget);
@@ -1322,7 +1324,7 @@ get_layout_location (GtkLabel  *self,
   PangoRectangle logical;
   float xalign;
   int baseline;
-  int x, y;
+  float x, y;
 
   g_assert (xp);
   g_assert (yp);
@@ -1334,8 +1336,10 @@ get_layout_location (GtkLabel  *self,
 
   pango_layout_get_pixel_extents (self->layout, NULL, &logical);
   x = floor ((xalign * (widget_width - logical.width)) - logical.x);
+  if (x < 0)
+    x = 0.f;
 
-  baseline = gtk_widget_get_allocated_baseline (widget);
+  baseline = gtk_widget_get_baseline (widget);
   if (baseline != -1)
     {
       int layout_baseline = pango_layout_get_baseline (self->layout) / PANGO_SCALE;
@@ -1382,7 +1386,7 @@ gtk_label_snapshot (GtkWidget   *widget,
   GtkLabel *self = GTK_LABEL (widget);
   GtkLabelSelectionInfo *info;
   GtkCssStyle *style;
-  int lx, ly;
+  float lx, ly;
   int width, height;
   GtkCssBoxes boxes;
 
@@ -1705,7 +1709,7 @@ get_layout_index (GtkLabel *self,
   const char *cluster;
   const char *cluster_end;
   gboolean inside;
-  int lx, ly;
+  float lx, ly;
 
   *index = 0;
 
@@ -1970,10 +1974,13 @@ gtk_label_activate_link_open (GtkWidget  *widget,
                               GVariant   *parameter)
 {
   GtkLabel *self = GTK_LABEL (widget);
-  GtkLabelLink *link = self->select_info->context_link;
+  if (self->select_info)
+    {
+      GtkLabelLink *link = self->select_info->context_link;
 
-  if (link)
-    emit_activate_link (self, link);
+      if (link)
+        emit_activate_link (self, link);
+    }
 }
 
 static void
@@ -1982,17 +1989,18 @@ gtk_label_activate_link_copy (GtkWidget  *widget,
                               GVariant   *parameter)
 {
   GtkLabel *self = GTK_LABEL (widget);
-  GtkLabelLink *link = self->select_info->context_link;
-
-  if (link)
+  if (self->select_info)
     {
-      GdkClipboard *clipboard;
+      GtkLabelLink *link = self->select_info->context_link;
 
-      clipboard = gtk_widget_get_clipboard (widget);
-      gdk_clipboard_set_text (clipboard, link->uri);
+      if (link)
+        {
+          GdkClipboard *clipboard;
+
+          clipboard = gtk_widget_get_clipboard (widget);
+          gdk_clipboard_set_text (clipboard, link->uri);
+        }
     }
-  else
-    g_print ("no link ?!\n");
 }
 
 static void
@@ -2237,9 +2245,11 @@ gtk_label_class_init (GtkLabelClass *class)
    * the variant with the Shift modifier extends the selection,
    * the variant without the Shift modifier does not.
    * There are too many key combinations to list them all here.
-   * - Arrow keys move by individual characters/lines
-   * - Ctrl-arrow key combinations move by words/paragraphs
-   * - Home/End keys move to the ends of the buffer
+   *
+   * - <kbd>←</kbd>, <kbd>→</kbd>, <kbd>↑</kbd>, <kbd>↓</kbd>
+   *   move by individual characters/lines
+   * - <kbd>Ctrl</kbd>+<kbd>←</kbd>, etc. move by words/paragraphs
+   * - <kbd>Home</kbd> and <kbd>End</kbd> move to the ends of the buffer
    */
   signals[MOVE_CURSOR] =
     g_signal_new (I_("move-cursor"),
@@ -2252,6 +2262,9 @@ gtk_label_class_init (GtkLabelClass *class)
                   GTK_TYPE_MOVEMENT_STEP,
                   G_TYPE_INT,
                   G_TYPE_BOOLEAN);
+  g_signal_set_va_marshaller (signals[MOVE_CURSOR],
+                              G_OBJECT_CLASS_TYPE (gobject_class),
+                              _gtk_marshal_VOID__ENUM_INT_BOOLEANv);
 
    /**
    * GtkLabel::copy-clipboard:
@@ -2261,7 +2274,7 @@ gtk_label_class_init (GtkLabelClass *class)
    *
    * The ::copy-clipboard signal is a [keybinding signal](class.SignalAction.html).
    *
-   * The default binding for this signal is Ctrl-c.
+   * The default binding for this signal is <kbd>Ctrl</kbd>+<kbd>c</kbd>.
    */
   signals[COPY_CLIPBOARD] =
     g_signal_new (I_("copy-clipboard"),
@@ -2272,48 +2285,51 @@ gtk_label_class_init (GtkLabelClass *class)
                   NULL,
                   G_TYPE_NONE, 0);
 
-    /**
-     * GtkLabel::activate-current-link:
-     * @self: The label on which the signal was emitted
-     *
-     * Gets emitted when the user activates a link in the label.
-     *
-     * The ::activate-current-link is a [keybinding signal](class.SignalAction.html).
-     *
-     * Applications may also emit the signal with g_signal_emit_by_name()
-     * if they need to control activation of URIs programmatically.
-     *
-     * The default bindings for this signal are all forms of the Enter key.
-     */
-    signals[ACTIVATE_CURRENT_LINK] =
-      g_signal_new_class_handler (I_("activate-current-link"),
-                                  G_TYPE_FROM_CLASS (gobject_class),
-                                  G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION,
-                                  G_CALLBACK (gtk_label_activate_current_link),
-                                  NULL, NULL,
-                                  NULL,
-                                  G_TYPE_NONE, 0);
+  /**
+   * GtkLabel::activate-current-link:
+   * @self: The label on which the signal was emitted
+   *
+   * Gets emitted when the user activates a link in the label.
+   *
+   * The ::activate-current-link is a [keybinding signal](class.SignalAction.html).
+   *
+   * Applications may also emit the signal with g_signal_emit_by_name()
+   * if they need to control activation of URIs programmatically.
+   *
+   * The default bindings for this signal are all forms of the <kbd>Enter</kbd> key.
+   */
+  signals[ACTIVATE_CURRENT_LINK] =
+    g_signal_new_class_handler (I_("activate-current-link"),
+                                G_TYPE_FROM_CLASS (gobject_class),
+                                G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION,
+                                G_CALLBACK (gtk_label_activate_current_link),
+                                NULL, NULL,
+                                NULL,
+                                G_TYPE_NONE, 0);
 
-    /**
-     * GtkLabel::activate-link:
-     * @self: The label on which the signal was emitted
-     * @uri: the URI that is activated
-     *
-     * Gets emitted to activate a URI.
-     *
-     * Applications may connect to it to override the default behaviour,
-     * which is to call [method@Gtk.FileLauncher.launch].
-     *
-     * Returns: %TRUE if the link has been activated
-     */
-    signals[ACTIVATE_LINK] =
-      g_signal_new (I_("activate-link"),
-                    G_TYPE_FROM_CLASS (gobject_class),
-                    G_SIGNAL_RUN_LAST,
-                    G_STRUCT_OFFSET (GtkLabelClass, activate_link),
-                    _gtk_boolean_handled_accumulator, NULL,
-                    _gtk_marshal_BOOLEAN__STRING,
-                    G_TYPE_BOOLEAN, 1, G_TYPE_STRING);
+  /**
+   * GtkLabel::activate-link:
+   * @self: The label on which the signal was emitted
+   * @uri: the URI that is activated
+   *
+   * Gets emitted to activate a URI.
+   *
+   * Applications may connect to it to override the default behaviour,
+   * which is to call [method@Gtk.FileLauncher.launch].
+   *
+   * Returns: %TRUE if the link has been activated
+   */
+  signals[ACTIVATE_LINK] =
+    g_signal_new (I_("activate-link"),
+                  G_TYPE_FROM_CLASS (gobject_class),
+                  G_SIGNAL_RUN_LAST,
+                  G_STRUCT_OFFSET (GtkLabelClass, activate_link),
+                  _gtk_boolean_handled_accumulator, NULL,
+                  _gtk_marshal_BOOLEAN__STRING,
+                  G_TYPE_BOOLEAN, 1, G_TYPE_STRING);
+  g_signal_set_va_marshaller (signals[ACTIVATE_LINK],
+                              G_TYPE_FROM_CLASS (gobject_class),
+                              _gtk_marshal_BOOLEAN__STRINGv);
 
   /**
    * GtkLabel:label: (attributes org.gtk.Property.get=gtk_label_get_label org.gtk.Property.set=gtk_label_set_label)
@@ -2361,7 +2377,8 @@ gtk_label_class_init (GtkLabelClass *class)
   /**
    * GtkLabel:use-underline: (attributes org.gtk.Property.get=gtk_label_get_use_underline org.gtk.Property.set=gtk_label_set_use_underline)
    *
-   * %TRUE if the text of the label indicates a mnemonic with _.
+   * %TRUE if the text of the label indicates a mnemonic with an _
+   * before the mnemonic character.
    */
   label_props[PROP_USE_UNDERLINE] =
       g_param_spec_boolean ("use-underline", NULL, NULL,
@@ -2486,7 +2503,7 @@ gtk_label_class_init (GtkLabelClass *class)
   label_props[PROP_MNEMONIC_WIDGET] =
       g_param_spec_object ("mnemonic-widget", NULL, NULL,
                            GTK_TYPE_WIDGET,
-                           GTK_PARAM_READWRITE);
+                           GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
    * GtkLabel:ellipsize: (attributes org.gtk.Property.get=gtk_label_get_ellipsize org.gtk.Property.set=gtk_label_set_ellipsize)
@@ -2968,7 +2985,7 @@ label_mnemonic_widget_weak_notify (gpointer      data,
  * the label) you need to set it explicitly using this function.
  *
  * The target widget will be accelerated by emitting the
- * [signal@GtkWidget::mnemonic-activate] signal on it. The default handler for
+ * [signal@Gtk.Widget::mnemonic-activate] signal on it. The default handler for
  * this signal will activate the widget if there are no mnemonic collisions
  * and toggle focus between the colliding widgets otherwise.
  */
@@ -2977,9 +2994,10 @@ gtk_label_set_mnemonic_widget (GtkLabel  *self,
                                GtkWidget *widget)
 {
   g_return_if_fail (GTK_IS_LABEL (self));
+  g_return_if_fail (widget == NULL || GTK_IS_WIDGET (widget));
 
-  if (widget)
-    g_return_if_fail (GTK_IS_WIDGET (widget));
+  if (self->mnemonic_widget == widget)
+    return;
 
   if (self->mnemonic_widget)
     {
@@ -3053,10 +3071,6 @@ gtk_label_set_text_internal (GtkLabel *self,
   g_free (self->text);
   self->text = str;
 
-  gtk_accessible_update_property (GTK_ACCESSIBLE (self),
-                                  GTK_ACCESSIBLE_PROPERTY_LABEL, self->text,
-                                  -1);
-
   gtk_label_select_region_index (self, 0, 0);
 }
 
@@ -3071,6 +3085,11 @@ gtk_label_set_label_internal (GtkLabel   *self,
   self->label = g_strdup (str ? str : "");
 
   g_object_notify_by_pspec (G_OBJECT (self), label_props[PROP_LABEL]);
+
+  gtk_accessible_update_property (GTK_ACCESSIBLE (self),
+                                  GTK_ACCESSIBLE_PROPERTY_LABEL,
+                                  self->label,
+                                  -1);
 
   return TRUE;
 }
@@ -3232,10 +3251,10 @@ gtk_label_set_attributes (GtkLabel         *self,
  *
  * This is the [struct@Pango.AttrList] that was set on the label using
  * [method@Gtk.Label.set_attributes], if any. This function does not
- * reflect attributes that come from the labels markup (see
+ * reflect attributes that come from the label's markup (see
  * [method@Gtk.Label.set_markup]). If you want to get the effective
  * attributes for the label, use
- * `pango_layout_get_attribute (gtk_label_get_layout (self))`.
+ * `pango_layout_get_attributes (gtk_label_get_layout (self))`.
  *
  * Returns: (nullable) (transfer none): the attribute list
  */
@@ -3312,7 +3331,7 @@ strip_ulines (const char *text,
   char *q;
   gboolean after_uline = FALSE;
 
-  new_text = malloc (strlen (text) + 1);
+  new_text = g_malloc (strlen (text) + 1);
 
   q = new_text;
   for (p = text; *p; p++)
@@ -3885,7 +3904,7 @@ gtk_label_get_justify (GtkLabel *self)
  * @self: a `GtkLabel`
  * @mode: a `PangoEllipsizeMode`
  *
- * Sets the mode used to ellipsizei the text.
+ * Sets the mode used to ellipsize the text.
  *
  * The text will be ellipsized if there is not enough space
  * to render the entire string.
@@ -4937,6 +4956,10 @@ gtk_label_set_selectable (GtkLabel *self,
       gtk_label_ensure_select_info (self);
       self->select_info->selectable = TRUE;
       gtk_label_update_cursor (self);
+
+      gtk_accessible_update_property (GTK_ACCESSIBLE (self),
+                                      GTK_ACCESSIBLE_PROPERTY_HAS_POPUP, TRUE,
+                                      -1);
     }
   else
     {
@@ -4948,7 +4971,10 @@ gtk_label_set_selectable (GtkLabel *self,
           self->select_info->selectable = FALSE;
           gtk_label_clear_select_info (self);
         }
+
+      gtk_accessible_reset_property (GTK_ACCESSIBLE (self), GTK_ACCESSIBLE_PROPERTY_HAS_POPUP);
     }
+
   if (setting != old_setting)
     {
       g_object_freeze_notify (G_OBJECT (self));
@@ -5230,17 +5256,17 @@ gtk_label_get_layout_offsets (GtkLabel *self,
                               int      *x,
                               int      *y)
 {
-  int local_x, local_y;
+  float local_x, local_y;
   g_return_if_fail (GTK_IS_LABEL (self));
 
   gtk_label_ensure_layout (self);
   get_layout_location (self, &local_x, &local_y);
 
   if (x)
-    *x = local_x;
+    *x = (int) local_x;
 
   if (y)
-    *y = local_y;
+    *y = (int) local_y;
 }
 
 /**
@@ -5730,6 +5756,10 @@ gtk_label_do_popup (GtkLabel *self,
       gtk_popover_set_has_arrow (GTK_POPOVER (self->popup_menu), FALSE);
       gtk_widget_set_halign (self->popup_menu, GTK_ALIGN_START);
 
+      gtk_accessible_update_property (GTK_ACCESSIBLE (self->popup_menu),
+                                      GTK_ACCESSIBLE_PROPERTY_LABEL, _("Context menu"),
+                                      -1);
+
       g_object_unref (model);
     }
 
@@ -5769,10 +5799,10 @@ gtk_label_get_current_uri (GtkLabel *self)
   if (!self->select_info)
     return NULL;
 
-  if (self->select_info->link_clicked)
-    link = self->select_info->active_link;
-  else
+  if (!self->select_info->link_clicked && self->select_info->selectable)
     link = gtk_label_get_focus_link (self, NULL);
+  else
+    link = self->select_info->active_link;
 
   if (link)
     return link->uri;
@@ -5890,7 +5920,7 @@ gtk_label_get_xalign (GtkLabel *self)
 }
 
 /**
- * gtk_label_set_yalign: (attributes org.gtk.Method.get_property=yalign)
+ * gtk_label_set_yalign: (attributes org.gtk.Method.set_property=yalign)
  * @self: a `GtkLabel`
  * @yalign: the new yalign value, between 0 and 1
  *
@@ -5916,7 +5946,7 @@ gtk_label_set_yalign (GtkLabel *self,
 }
 
 /**
- * gtk_label_get_yalign: (attributes org.gtk.Method.set_property=yalign)
+ * gtk_label_get_yalign: (attributes org.gtk.Method.get_property=yalign)
  * @self: a `GtkLabel`
  *
  * Gets the `yalign` of the label.

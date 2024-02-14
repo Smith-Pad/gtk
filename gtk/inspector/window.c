@@ -719,7 +719,7 @@ get_inspector_display (void)
       if (display)
         g_debug ("Using default display for GtkInspector");
       else
-        g_message ("Failed to separate connection to default display");
+        g_message ("Failed to open separate connection to default display");
     }
 
 
@@ -734,7 +734,9 @@ get_inspector_display (void)
 
       flags = gdk_display_get_debug_flags (gdk_display_get_default ());
 
-      gdk_display_set_debug_flags (display, flags & (GDK_DEBUG_GL_GLES | GDK_DEBUG_GL_GLX));
+      gdk_display_set_debug_flags (display, flags & (GDK_DEBUG_GL_DISABLE_GL |
+                                                     GDK_DEBUG_GL_DISABLE_GLES |
+                                                     GDK_DEBUG_GL_GLX));
       gtk_set_display_debug_flags (display, 0);
     }
 

@@ -65,7 +65,6 @@ print_atoms (GdkX11Clipboard *cb,
              const Atom      *atoms,
              gsize            n_atoms)
 {
-#ifdef G_ENABLE_DEBUG
   GdkDisplay *display = gdk_clipboard_get_display (GDK_CLIPBOARD (cb));
 
   if (GDK_DISPLAY_DEBUG_CHECK (display, CLIPBOARD))
@@ -82,7 +81,6 @@ print_atoms (GdkX11Clipboard *cb,
       gdk_debug_message ("%s", str->str);
       g_string_free (str, TRUE);
     }
-#endif
 }
 
 static void
@@ -201,7 +199,7 @@ gdk_x11_clipboard_formats_to_targets (GdkContentFormats *formats)
             continue;
 
           if (g_str_equal (mime_types[i], special_targets[j].mime_type))
-            targets = g_slist_prepend (targets, (gpointer) g_intern_string (special_targets[j].x_target));
+            targets = g_slist_prepend (targets, (gpointer) g_intern_static_string (special_targets[j].x_target));
         }
       targets = g_slist_prepend (targets, (gpointer) mime_types[i]);
     }
@@ -237,6 +235,8 @@ gdk_x11_clipboard_formats_to_atoms (GdkDisplay        *display,
   i = 0;
   for (l = targets; l; l = l->next)
     atoms[i++] = gdk_x11_get_xatom_by_name_for_display (display, l->data);
+
+  g_slist_free (targets);
 
   return atoms;
 }
@@ -328,14 +328,12 @@ gdk_x11_clipboard_request_targets_finish (GObject      *source_object,
   formats = gdk_x11_clipboard_formats_from_atoms (display,
                                                   g_bytes_get_data (bytes, NULL),
                                                   g_bytes_get_size (bytes) / sizeof (Atom));
-#ifdef G_ENABLE_DEBUG
   if (GDK_DISPLAY_DEBUG_CHECK (display, CLIPBOARD))
     {
       char *s = gdk_content_formats_to_string (formats);
       gdk_debug_message ("%s: got formats: %s", cb->selection, s);
       g_free (s);
     }
-#endif
 
   /* union with previously loaded formats */
   formats = gdk_content_formats_union (formats, gdk_clipboard_get_formats (GDK_CLIPBOARD (cb)));
@@ -479,20 +477,16 @@ gdk_x11_clipboard_xevent (GdkDisplay   *display,
 
     case SelectionRequest:
       {
-#ifdef G_ENABLE_DEBUG
        const char *target, *property;
-#endif
 
         if (xevent->xselectionrequest.selection != cb->xselection)
           return FALSE;
 
-#ifdef G_ENABLE_DEBUG
         target = gdk_x11_get_xatom_name_for_display (display, xevent->xselectionrequest.target);
         if (xevent->xselectionrequest.property == None)
           property = target;
         else
           property = gdk_x11_get_xatom_name_for_display (display, xevent->xselectionrequest.property);
-#endif
 
         if (!gdk_clipboard_is_local (GDK_CLIPBOARD (cb)))
           {

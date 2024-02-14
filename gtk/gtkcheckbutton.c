@@ -481,16 +481,15 @@ gtk_check_button_focus (GtkWidget         *widget,
             }
         }
 
+      g_ptr_array_free (child_array, TRUE);
 
-      if (new_focus)
+      if (new_focus && new_focus != widget)
         {
           gtk_widget_grab_focus (new_focus);
           gtk_widget_activate (new_focus);
+          return TRUE;
         }
-
-      g_ptr_array_free (child_array, TRUE);
-
-      return TRUE;
+      return FALSE;
     }
   else
     {
@@ -672,6 +671,9 @@ gtk_check_button_class_init (GtkCheckButtonClass *class)
    *
    * Applications should never connect to this signal, but use the
    * [signal@Gtk.CheckButton::toggled] signal.
+   *
+   * The default bindings for this signal are all forms of the
+   * <kbd>␣</kbd> and <kbd>Enter</kbd> keys.
    *
    * Since: 4.2
    */
@@ -1127,8 +1129,13 @@ void
 gtk_check_button_set_child (GtkCheckButton *button,
                             GtkWidget      *child)
 {
+  GtkCheckButtonPrivate *priv = gtk_check_button_get_instance_private (button);
+
   g_return_if_fail (GTK_IS_CHECK_BUTTON (button));
-  g_return_if_fail (child == NULL || GTK_IS_WIDGET (child));
+  g_return_if_fail (child == NULL || priv->child == child || gtk_widget_get_parent (child) == NULL);
+
+  if (priv->child == child)
+    return;
 
   g_object_freeze_notify (G_OBJECT (button));
 

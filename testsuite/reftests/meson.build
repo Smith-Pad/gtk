@@ -3,8 +3,7 @@
 reftest_cflags = []
 foreach flag: common_cflags
   if flag not in ['-Werror=missing-prototypes', '-Wmissing-prototypes',
-                  '-Werror=missing-declarations', '-Wmissing-declarations',
-                  '-fvisibility=hidden']
+                  '-Werror=missing-declarations', '-Wmissing-declarations']
     reftest_cflags += flag
   endif
 endforeach
@@ -19,6 +18,7 @@ libreftest = library('reftest',
   sources: [
     'expand-expander.c',
     'frame-inhibitor.c',
+    'glarea-gl-only.c',
     'letter-spacing.c',
     'set-default-direction.c',
     'statusbar-remove-all.c',
@@ -309,6 +309,9 @@ testdata = [
   'font-sizes-names.css',
   'font-sizes-names.ref.ui',
   'font-sizes-names.ui',
+  'glarea-gl-only.css',
+  'glarea-gl-only.ref.ui',
+  'glarea-gl-only.ui',
   'gtk-image-effect-inherit.css',
   'gtk-image-effect-inherit.ref.ui',
   'gtk-image-effect-inherit.ui',
@@ -622,7 +625,6 @@ reftest_env = environment()
 reftest_env.set('GTK_A11Y', 'test')
 reftest_env.set('G_TEST_SRCDIR', meson.current_source_dir())
 reftest_env.set('G_TEST_BUILDDIR', meson.current_build_dir())
-reftest_env.set('GIO_USE_VFS', 'local')
 reftest_env.set('GSETTINGS_BACKEND', 'memory')
 reftest_env.set('G_ENABLE_DIAGNOSTIC', '0')
 reftest_env.set('REFTEST_MODULE_DIR', meson.current_build_dir())

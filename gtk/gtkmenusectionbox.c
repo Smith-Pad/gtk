@@ -359,6 +359,7 @@ gtk_menu_section_box_insert_func (GtkMenuTrackerItem *item,
                                  NULL);
           g_object_bind_property (item, "label", widget, "text", G_BINDING_SYNC_CREATE);
           g_object_bind_property (item, "icon", widget, "icon", G_BINDING_SYNC_CREATE);
+          g_object_bind_property (item, "use-markup", widget, "use-markup", G_BINDING_SYNC_CREATE);
           g_object_bind_property (item, "sensitive", widget, "sensitive", G_BINDING_SYNC_CREATE);
 
           g_signal_connect (submenu, "show", G_CALLBACK (submenu_shown), item);
@@ -376,6 +377,7 @@ gtk_menu_section_box_insert_func (GtkMenuTrackerItem *item,
                                  NULL);
           g_object_bind_property (item, "label", widget, "text", G_BINDING_SYNC_CREATE);
           g_object_bind_property (item, "icon", widget, "icon", G_BINDING_SYNC_CREATE);
+          g_object_bind_property (item, "use-markup", widget, "use-markup", G_BINDING_SYNC_CREATE);
           g_object_bind_property (item, "sensitive", widget, "sensitive", G_BINDING_SYNC_CREATE);
 
           get_ancestors (GTK_WIDGET (box->toplevel), GTK_TYPE_STACK, &stack, &parent);
@@ -664,7 +666,7 @@ gtk_menu_section_box_new_section (GtkMenuTrackerItem *item,
       gtk_orientable_set_orientation (GTK_ORIENTABLE (box->item_box), GTK_ORIENTATION_HORIZONTAL);
       gtk_widget_add_css_class (GTK_WIDGET (box->item_box), "inline-buttons");
 
-      spacer = gtk_builtin_icon_new ("none");
+      spacer = gtk_gizmo_new ("none", NULL, NULL, NULL,NULL, NULL, NULL);
       gtk_box_append (GTK_BOX (box->item_box), spacer);
       gtk_size_group_add_widget (box->indicators, spacer);
 

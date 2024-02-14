@@ -139,6 +139,7 @@ do_video_player (GtkWidget *do_widget)
 
       video = gtk_video_new ();
       gtk_video_set_autoplay (GTK_VIDEO (video), TRUE);
+      gtk_video_set_graphics_offload (GTK_VIDEO (video), GTK_GRAPHICS_OFFLOAD_ENABLED);
       gtk_window_set_child (GTK_WINDOW (window), video);
 
       title = gtk_header_bar_new ();
@@ -150,20 +151,36 @@ do_video_player (GtkWidget *do_widget)
 
       button = gtk_button_new ();
       image = gtk_image_new_from_resource ("/cursors/images/gtk_logo_cursor.png");
+      gtk_accessible_update_relation (GTK_ACCESSIBLE (image),
+                                      GTK_ACCESSIBLE_RELATION_LABELLED_BY, button, NULL,
+                                      -1);
       gtk_image_set_pixel_size (GTK_IMAGE (image), 24);
       gtk_button_set_child (GTK_BUTTON (button), image);
       g_signal_connect (button, "clicked", G_CALLBACK (logo_clicked_cb), video);
+      gtk_accessible_update_property (GTK_ACCESSIBLE (button),
+                                      GTK_ACCESSIBLE_PROPERTY_LABEL, "GTK Logo",
+                                      -1);
       gtk_header_bar_pack_start (GTK_HEADER_BAR (title), button);
 
       button = gtk_button_new ();
       image = gtk_image_new_from_resource ("/video-player/bbb.png");
+      gtk_accessible_update_relation (GTK_ACCESSIBLE (image),
+                                      GTK_ACCESSIBLE_RELATION_LABELLED_BY, button, NULL,
+                                      -1);
       gtk_image_set_pixel_size (GTK_IMAGE (image), 24);
       gtk_button_set_child (GTK_BUTTON (button), image);
       g_signal_connect (button, "clicked", G_CALLBACK (bbb_clicked_cb), video);
+      gtk_accessible_update_property (GTK_ACCESSIBLE (button),
+                                      GTK_ACCESSIBLE_PROPERTY_LABEL, "Big Buck Bunny",
+                                      -1);
       gtk_header_bar_pack_start (GTK_HEADER_BAR (title), button);
 
       fullscreen_button = gtk_button_new_from_icon_name ("view-fullscreen-symbolic");
       g_signal_connect (fullscreen_button, "clicked", G_CALLBACK (fullscreen_clicked_cb), NULL);
+      gtk_accessible_update_property (GTK_ACCESSIBLE (fullscreen_button),
+                                      GTK_ACCESSIBLE_PROPERTY_LABEL, "Fullscreen",
+                                      -1);
+
       gtk_header_bar_pack_end (GTK_HEADER_BAR (title), fullscreen_button);
 
       controller = gtk_shortcut_controller_new ();

@@ -233,6 +233,9 @@ gtk_css_provider_class_init (GtkCssProviderClass *klass)
                   NULL, NULL,
                   _gtk_marshal_VOID__BOXED_BOXED,
                   G_TYPE_NONE, 2, GTK_TYPE_CSS_SECTION, G_TYPE_ERROR);
+  g_signal_set_va_marshaller (css_provider_signals[PARSING_ERROR],
+                              G_TYPE_FROM_CLASS (object_class),
+                              _gtk_marshal_VOID__BOXED_BOXEDv);
 
   object_class->finalize = gtk_css_provider_finalize;
 
@@ -1013,7 +1016,7 @@ gtk_css_provider_postprocess (GtkCssProvider *css_provider)
     }
 #endif
 
-  gdk_profiler_end_mark (before, "create selector tree", NULL);
+  gdk_profiler_end_mark (before, "Create CSS selector tree", NULL);
 }
 
 static void
@@ -1078,7 +1081,7 @@ gtk_css_provider_load_internal (GtkCssProvider *self,
   if (GDK_PROFILER_IS_RUNNING)
     {
       char *uri = g_file_get_uri (file);
-      gdk_profiler_end_mark (before, "theme load", uri);
+      gdk_profiler_end_mark (before, "CSS theme load", uri);
       g_free (uri);
     }
 }
@@ -1092,6 +1095,9 @@ gtk_css_provider_load_internal (GtkCssProvider *self,
  * Loads @data into @css_provider.
  *
  * This clears any previously loaded information.
+ *
+ * Deprecated: 4.12: Use [method@Gtk.CssProvider.load_from_string]
+ *   or [method@Gtk.CssProvider.load_from_bytes] instead
  */
 void
 gtk_css_provider_load_from_data (GtkCssProvider  *css_provider,
@@ -1108,11 +1114,59 @@ gtk_css_provider_load_from_data (GtkCssProvider  *css_provider,
 
   bytes = g_bytes_new_static (data, length);
 
+  gtk_css_provider_load_from_bytes (css_provider, bytes);
+
+  g_bytes_unref (bytes);
+}
+
+/**
+ * gtk_css_provider_load_from_string:
+ * @css_provider: a `GtkCssProvider`
+ * @string: the CSS to load
+ *
+ * Loads @string into @css_provider.
+ *
+ * This clears any previously loaded information.
+ *
+ * Since: 4.12
+ */
+void
+gtk_css_provider_load_from_string (GtkCssProvider *css_provider,
+                                   const char     *string)
+{
+  GBytes *bytes;
+
+  g_return_if_fail (GTK_IS_CSS_PROVIDER (css_provider));
+  g_return_if_fail (string != NULL);
+
+  bytes = g_bytes_new_static (string, strlen (string));
+
+  gtk_css_provider_load_from_bytes (css_provider, bytes);
+
+  g_bytes_unref (bytes);
+}
+
+/**
+ * gtk_css_provider_load_from_bytes:
+ * @css_provider: a `GtkCssProvider`
+ * @data: `GBytes` containing the data to load
+ *
+ * Loads @data into @css_provider.
+ *
+ * This clears any previously loaded information.
+ *
+ * Since: 4.12
+ */
+void
+gtk_css_provider_load_from_bytes (GtkCssProvider *css_provider,
+                                  GBytes         *data)
+{
+  g_return_if_fail (GTK_IS_CSS_PROVIDER (css_provider));
+  g_return_if_fail (data != NULL);
+
   gtk_css_provider_reset (css_provider);
 
-  g_bytes_ref (bytes);
-  gtk_css_provider_load_internal (css_provider, NULL, NULL, bytes);
-  g_bytes_unref (bytes);
+  gtk_css_provider_load_internal (css_provider, NULL, NULL, g_bytes_ref (data));
 
   gtk_style_provider_changed (GTK_STYLE_PROVIDER (css_provider));
 }
@@ -1514,7 +1568,7 @@ gtk_css_provider_print_keyframes (GHashTable *keyframes,
  * Converts the @provider into a string representation in CSS
  * format.
  *
- * Using [method@Gtk.CssProvider.load_from_data] with the return
+ * Using [method@Gtk.CssProvider.load_from_string] with the return
  * value from this function on a new provider created with
  * [ctor@Gtk.CssProvider.new] will basically create a duplicate
  * of this @provider.

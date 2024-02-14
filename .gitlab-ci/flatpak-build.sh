@@ -19,15 +19,16 @@ flatpak build ${builddir} meson \
                 --buildtype=debugoptimized \
                 -Dx11-backend=true \
                 -Dwayland-backend=true \
+                -Dvulkan=disabled \
                 -Dbuild-tests=false \
                 -Dbuild-testsuite=false \
                 -Dbuild-examples=false \
                 -Dintrospection=disabled \
-                -Ddemos=true \
-                -Dprofile=devel \
+                -Dbuild-demos=true \
+                -Ddemo-profile=devel \
                 _flatpak_build
 
-flatpak build ${builddir} ninja -C _flatpak_build install
+flatpak build --env=CI_COMMIT_SHORT_SHA=$CI_COMMIT_SHORT_SHA ${builddir} ninja -C _flatpak_build install
 
 flatpak-builder \
         --user --disable-rofiles-fuse \

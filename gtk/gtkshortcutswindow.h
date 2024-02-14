@@ -16,14 +16,14 @@
  *  License along with this library. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef __GTK_SHORTCUTS_WINDOW_H__
-#define __GTK_SHORTCUTS_WINDOW_H__
+#pragma once
 
 #if !defined (__GTK_H_INSIDE__) && !defined (GTK_COMPILATION)
 #error "Only <gtk/gtk.h> can be included directly."
 #endif
 
 #include <gtk/gtkwindow.h>
+#include <gtk/gtkshortcutssection.h>
 
 G_BEGIN_DECLS
 
@@ -31,14 +31,16 @@ G_BEGIN_DECLS
 #define GTK_SHORTCUTS_WINDOW(obj)            (G_TYPE_CHECK_INSTANCE_CAST ((obj), GTK_TYPE_SHORTCUTS_WINDOW, GtkShortcutsWindow))
 #define GTK_IS_SHORTCUTS_WINDOW(obj)         (G_TYPE_CHECK_INSTANCE_TYPE ((obj), GTK_TYPE_SHORTCUTS_WINDOW))
 
-
 typedef struct _GtkShortcutsWindow GtkShortcutsWindow;
 
 GDK_AVAILABLE_IN_ALL
 GType gtk_shortcuts_window_get_type (void) G_GNUC_CONST;
 
+GDK_AVAILABLE_IN_4_14
+void gtk_shortcuts_window_add_section (GtkShortcutsWindow  *self,
+                                       GtkShortcutsSection *section);
+
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(GtkShortcutsWindow, g_object_unref)
 
 G_END_DECLS
 
-#endif /* GTK_SHORTCUTS_WINDOW _H */

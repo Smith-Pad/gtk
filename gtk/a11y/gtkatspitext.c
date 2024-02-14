@@ -691,6 +691,9 @@ gtk_editable_get_text_widget (GtkWidget *widget)
 
       if (GTK_IS_TEXT (delegate))
         return GTK_TEXT (delegate);
+
+      if (GTK_IS_TEXT (widget))
+        return GTK_TEXT (widget);
     }
 
   return NULL;
@@ -1397,12 +1400,12 @@ text_view_handle_method (GDBusConnection       *connection,
                                              rect.x, rect.y,
                                              &x, &y);
 
-      double dx, dy;
-      gtk_widget_translate_coordinates (widget,
-                                        GTK_WIDGET (gtk_widget_get_native (widget)),
-                                        (double) x, (double) y, &dx, &dy);
-      x = floor (dx);
-      y = floor (dy);
+      graphene_point_t p;
+      if (!gtk_widget_compute_point (widget, GTK_WIDGET (gtk_widget_get_native (widget)),
+                                     &GRAPHENE_POINT_INIT (x, y), &p))
+        graphene_point_init (&p, x, y);
+      x = floor (p.x);
+      y = floor (p.y);
 
       g_dbus_method_invocation_return_value (invocation,
                                              g_variant_new ("(iiii)",
@@ -1574,8 +1577,7 @@ gtk_atspi_get_text_vtable (GtkAccessible *accessible)
     return &label_vtable;
   else if (GTK_IS_INSCRIPTION (accessible))
     return &inscription_vtable;
-  else if (GTK_IS_EDITABLE (accessible) &&
-           GTK_IS_TEXT (gtk_editable_get_delegate (GTK_EDITABLE (accessible))))
+  else if (GTK_IS_EDITABLE (accessible))
     return &editable_vtable;
   else if (GTK_IS_TEXT_VIEW (accessible))
     return &text_view_vtable;
@@ -1614,7 +1616,10 @@ insert_text_cb (GtkEditable *editable,
     return;
 
   length = g_utf8_strlen (new_text, new_text_length);
-  changed->text_changed (changed->data, "insert", *position - length, length, new_text);
+
+  char *inserted_text = g_utf8_substring (new_text, 0, length);
+  changed->text_changed (changed->data, "insert", *position - length, length, inserted_text);
+  g_free (inserted_text);
 }
 
 static void
@@ -1629,6 +1634,10 @@ delete_text_cb (GtkEditable *editable,
     return;
 
   text = gtk_editable_get_chars (editable, start, end);
+
+  if (end < 0)
+    end = g_utf8_strlen(text, -1);
+
   changed->text_changed (changed->data, "delete", start, end - start, text);
   g_free (text);
 }
@@ -1707,7 +1716,9 @@ insert_range_cb (GtkTextBuffer *buffer,
   position = gtk_text_iter_get_offset (iter);
   length = g_utf8_strlen (text, len);
 
-  changed->text_changed (changed->data, "insert", position - length, length, text);
+  char *inserted_text = g_utf8_substring (text, 0, length);
+  changed->text_changed (changed->data, "insert", position - length, length, inserted_text);
+  g_free (inserted_text);
 
   update_cursor (buffer, changed);
 }
@@ -1784,7 +1795,7 @@ buffer_changed (GtkWidget   *widget,
   if (changed->buffer)
     {
       g_object_ref (changed->buffer);
-      g_signal_connect (changed->buffer, "insert-text", G_CALLBACK (insert_range_cb), changed);
+      g_signal_connect_after (changed->buffer, "insert-text", G_CALLBACK (insert_range_cb), changed);
       g_signal_connect (changed->buffer, "delete-range", G_CALLBACK (delete_range_cb), changed);
       g_signal_connect_after (changed->buffer, "delete-range", G_CALLBACK (delete_range_after_cb), changed);
       g_signal_connect_after (changed->buffer, "mark-set", G_CALLBACK (mark_set_cb), changed);

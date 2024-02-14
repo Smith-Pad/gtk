@@ -198,8 +198,7 @@ surface_event (GdkSurface *surface,
                GdkEvent   *event,
                GtkWidget  *widget)
 {
-  gtk_main_do_event (event);
-  return TRUE;
+  return gtk_main_do_event (event);
 }
 
 static void
@@ -240,8 +239,7 @@ gtk_tooltip_window_unrealize (GtkWidget *widget)
   g_signal_handlers_disconnect_by_func (window->surface, surface_render, widget);
   g_signal_handlers_disconnect_by_func (window->surface, surface_event, widget);
   gdk_surface_set_widget (window->surface, NULL);
-  gdk_surface_destroy (window->surface);
-  g_clear_object (&window->surface);
+  g_clear_pointer (&window->surface, gdk_surface_destroy);
 }
 
 
@@ -258,7 +256,7 @@ surface_transform_changed_cb (GtkWidget               *widget,
                               const graphene_matrix_t *transform,
                               gpointer                 user_data)
 {
-  GtkTooltipWindow *window = GTK_TOOLTIP_WINDOW (widget);
+  GtkTooltipWindow *window = GTK_TOOLTIP_WINDOW (user_data);
 
   gtk_tooltip_window_relayout (window);
 

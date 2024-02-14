@@ -1,3 +1,5 @@
+subdir('deprecated')
+
 gdk_public_sources = files([
   'gdk.c',
   'gdkapplaunchcontext.c',
@@ -15,6 +17,13 @@ gdk_public_sources = files([
   'gdkdevicetool.c',
   'gdkdisplay.c',
   'gdkdisplaymanager.c',
+  'gdkdmabuf.c',
+  'gdkdmabufdownloader.c',
+  'gdkdmabufegl.c',
+  'gdkdmabufformats.c',
+  'gdkdmabufformatsbuilder.c',
+  'gdkdmabuftexture.c',
+  'gdkdmabuftexturebuilder.c',
   'gdkdrag.c',
   'gdkdragsurface.c',
   'gdkdragsurfacesize.c',
@@ -29,6 +38,7 @@ gdk_public_sources = files([
   'gdkglcontext.c',
   'gdkglobals.c',
   'gdkgltexture.c',
+  'gdkgltexturebuilder.c',
   'gdkhsla.c',
   'gdkkeys.c',
   'gdkkeyuni.c',
@@ -37,7 +47,6 @@ gdk_public_sources = files([
   'gdkmonitor.c',
   'gdkpaintable.c',
   'gdkpango.c',
-  'gdkpixbuf.c',
   'gdkpipeiostream.c',
   'gdkrectangle.c',
   'gdkrgba.c',
@@ -47,6 +56,7 @@ gdk_public_sources = files([
   'gdktexture.c',
   'gdktexturedownloader.c',
   'gdkvulkancontext.c',
+  'gdksubsurface.c',
   'gdksurface.c',
   'gdkpopuplayout.c',
   'gdkprofiler.c',
@@ -77,6 +87,9 @@ gdk_public_headers = files([
   'gdkdisplay.h',
   'gdkdisplaymanager.h',
   'gdkdrag.h',
+  'gdkdmabufformats.h',
+  'gdkdmabuftexture.h',
+  'gdkdmabuftexturebuilder.h',
   'gdkdragsurfacesize.h',
   'gdkdrawcontext.h',
   'gdkdrop.h',
@@ -86,13 +99,13 @@ gdk_public_headers = files([
   'gdkframetimings.h',
   'gdkglcontext.h',
   'gdkgltexture.h',
+  'gdkgltexturebuilder.h',
   'gdkkeys.h',
   'gdkkeysyms.h',
   'gdkmemorytexture.h',
   'gdkmonitor.h',
   'gdkpaintable.h',
   'gdkpango.h',
-  'gdkpixbuf.h',
   'gdkrectangle.h',
   'gdkrgba.h',
   'gdkseat.h',
@@ -110,8 +123,9 @@ gdk_public_headers = files([
   'gdkdragsurface.h',
 ])
 install_headers(gdk_public_headers, subdir: 'gtk-4.0/gdk/')
+install_headers(gdk_deprecated_headers, subdir: 'gtk-4.0/gdk/deprecated')
 
-gdk_sources = gdk_public_sources
+gdk_sources = gdk_public_sources + gdk_deprecated_sources
 
 gdk_private_h_sources = files([
   'gdkeventsprivate.h',
@@ -144,7 +158,7 @@ gdk_enums = gnome.mkenums_simple('gdkenumtypes',
   sources: gdk_public_headers,
   decorator: 'GDK_AVAILABLE_IN_ALL',
   body_prefix: '#include "config.h"',
-  header_prefix: '#include "gdkversionmacros.h"',
+  header_prefix: '#include "version/gdkversionmacros.h"\n',
   install_dir: gtk_includedir / 'gtk-4.0/gdk',
   install_header: true,
 )
@@ -181,13 +195,6 @@ gdkversion_cdata.set('GTK_MAJOR_VERSION', gtk_major_version)
 gdkversion_cdata.set('GTK_MINOR_VERSION', gtk_minor_version)
 gdkversion_cdata.set('GTK_MICRO_VERSION', gtk_micro_version)
 
-gdkversionmacros = configure_file(
-  input: 'gdkversionmacros.h.in',
-  output: 'gdkversionmacros.h',
-  configuration: gdkversion_cdata,
-  install_dir: gtk_includedir / 'gtk-4.0/gdk',
-)
-
 gdkinc = include_directories('.')
 gdkx11_inc = include_directories('x11')
 gdkwayland_inc = include_directories('wayland')
@@ -195,7 +202,7 @@ gdkwayland_inc = include_directories('wayland')
 wlinc = include_directories('.')
 win32rcinc = include_directories('win32/rc')
 
-gdk_gen_headers = [gdkenum_h, gdkmarshal_h, gdkconfig, gdkversionmacros]
+gdk_gen_headers = [gdkenum_h, gdkmarshal_h, gdkconfig, gdkversionmacros_h, gdk_visibility_h]
 
 gdk_deps = [
   libm,
@@ -212,6 +219,7 @@ gdk_deps = [
   platform_gio_dep,
   pangocairo_dep,
   vulkan_dep,
+  dmabuf_dep,
   png_dep,
   tiff_dep,
   jpeg_dep,
@@ -229,7 +237,8 @@ gdk_sources += [
   gdk_enums,
   gdk_marshalers,
   gdkresources,
-  gdkversionmacros,
+  gdkversionmacros_h,
+  gdk_visibility_h,
   gdk_private_h_sources,
   gdk_public_headers
 ]

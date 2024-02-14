@@ -564,13 +564,13 @@ gtk_css_node_class_init (GtkCssNodeClass *klass)
 
   cssnode_signals[STYLE_CHANGED] =
     g_signal_new (I_("style-changed"),
-		  G_TYPE_FROM_CLASS (object_class),
-		  G_SIGNAL_RUN_LAST,
+                  G_TYPE_FROM_CLASS (object_class),
+                  G_SIGNAL_RUN_LAST,
                   G_STRUCT_OFFSET (GtkCssNodeClass, style_changed),
-		  NULL, NULL,
-		  NULL,
-		  G_TYPE_NONE, 1,
-		  G_TYPE_POINTER);
+                  NULL, NULL,
+                  NULL,
+                  G_TYPE_NONE, 1,
+                  G_TYPE_POINTER);
 
   cssnode_properties[PROP_CLASSES] =
     g_param_spec_boxed ("classes", NULL, NULL,
@@ -1363,7 +1363,7 @@ gtk_css_node_validate (GtkCssNode *cssnode)
 
   if (GDK_PROFILER_IS_RUNNING)
     {
-      gdk_profiler_end_mark (before,  "css validation", "");
+      gdk_profiler_end_mark (before,  "Validate CSS", "");
       gdk_profiler_set_int_counter (invalidated_nodes_counter, invalidated_nodes);
       gdk_profiler_set_int_counter (created_styles_counter, created_styles);
       invalidated_nodes = 0;

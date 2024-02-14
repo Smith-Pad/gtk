@@ -19,15 +19,12 @@
  * License along with this library. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef __GDK_MONITOR_H__
-#define __GDK_MONITOR_H__
+#pragma once
 
 #if !defined (__GDK_H_INSIDE__) && !defined (GTK_COMPILATION)
 #error "Only <gdk/gdk.h> can be included directly."
 #endif
 
-#include <gdk/gdkversionmacros.h>
-#include <gdk/gdkrectangle.h>
 #include <gdk/gdktypes.h>
 
 G_BEGIN_DECLS
@@ -80,6 +77,8 @@ GDK_AVAILABLE_IN_ALL
 const char *      gdk_monitor_get_connector       (GdkMonitor   *monitor);
 GDK_AVAILABLE_IN_ALL
 int               gdk_monitor_get_scale_factor    (GdkMonitor   *monitor);
+GDK_AVAILABLE_IN_4_14
+double            gdk_monitor_get_scale           (GdkMonitor   *monitor);
 GDK_AVAILABLE_IN_ALL
 int               gdk_monitor_get_refresh_rate    (GdkMonitor   *monitor);
 GDK_AVAILABLE_IN_ALL
@@ -93,4 +92,3 @@ G_DEFINE_AUTOPTR_CLEANUP_FUNC(GdkMonitor, g_object_unref)
 
 G_END_DECLS
 
-#endif  /* __GDK_MONITOR_H__ */

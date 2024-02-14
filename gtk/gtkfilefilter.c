@@ -723,9 +723,9 @@ gtk_file_filter_add_pixbuf_formats (GtkFileFilter *filter)
       mime_types = gdk_pixbuf_format_get_mime_types (l->data);
 
       for (i = 0; mime_types[i] != NULL; i++)
-        {
-          g_ptr_array_add (array, g_content_type_from_mime_type (mime_types[i]));
-        }
+        g_ptr_array_add (array, g_content_type_from_mime_type (mime_types[i]));
+
+      g_strfreev (mime_types);
     }
   g_slist_free (formats);
 
@@ -758,8 +758,6 @@ gtk_file_filter_get_attributes (GtkFileFilter *filter)
 
 #ifdef GDK_WINDOWING_MACOS
 
-#import <Foundation/Foundation.h>
-
 NSArray * _gtk_file_filter_get_as_pattern_nsstrings (GtkFileFilter *filter)
 {
   NSMutableArray *array = [[NSMutableArray alloc] init];
@@ -772,16 +770,21 @@ NSArray * _gtk_file_filter_get_as_pattern_nsstrings (GtkFileFilter *filter)
       switch (rule->type)
         {
         case FILTER_RULE_MIME_TYPE:
+        case FILTER_RULE_PIXBUF_FORMATS:
           {
-            // convert mime-types to UTI
-            NSString *mime_type_nsstring = [NSString stringWithUTF8String: rule->u.content_types[0]];
-            NSString *uti_nsstring = (NSString *) UTTypeCreatePreferredIdentifierForTag (kUTTagClassMIMEType, (CFStringRef) mime_type_nsstring, NULL);
-            if (uti_nsstring == NULL)
+            int i;
+
+            // GContentType from GIO use UTI on macOS since glib version 2.51
+            for (i = 0; rule->u.content_types[i] != NULL; i++)
               {
-                [array release];
-                return NULL;
+                NSString *uti_nsstring = [NSString stringWithUTF8String: rule->u.content_types[i]];
+                if (uti_nsstring == NULL)
+                  {
+                    [array release];
+                    return NULL;
+                  }
+                [array addObject:uti_nsstring];
               }
-            [array addObject:uti_nsstring];
           }
           break;
 
@@ -801,34 +804,9 @@ NSArray * _gtk_file_filter_get_as_pattern_nsstrings (GtkFileFilter *filter)
             char *pattern_c = g_string_free (pattern, FALSE);
             NSString *pattern_nsstring = [NSString stringWithUTF8String:pattern_c];
             g_free (pattern_c);
-            [pattern_nsstring retain];
             [array addObject:pattern_nsstring];
           }
           break;
-
-        case FILTER_RULE_PIXBUF_FORMATS:
-          {
-            GSList *formats, *l;
-
-            formats = gdk_pixbuf_get_formats ();
-            for (l = formats; l; l = l->next)
-              {
-                int i;
-                char **extensions;
-
-                extensions = gdk_pixbuf_format_get_extensions (l->data);
-
-                for (i = 0; extensions[i] != NULL; i++)
-                  {
-                    NSString *extension = [NSString stringWithUTF8String: extensions[i]];
-                    [extension retain];
-                    [array addObject:extension];
-                  }
-                g_strfreev (extensions);
-              }
-            g_slist_free (formats);
-            break;
-          }
        }
     }
   return array;

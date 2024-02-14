@@ -52,10 +52,14 @@ struct _GtkFileLauncher
   GObject parent_instance;
 
   GFile *file;
+  unsigned int always_ask : 1;
+  unsigned int writable   : 1;
 };
 
 enum {
   PROP_FILE = 1,
+  PROP_ALWAYS_ASK,
+  PROP_WRITABLE,
 
   NUM_PROPERTIES
 };
@@ -93,6 +97,14 @@ gtk_file_launcher_get_property (GObject      *object,
       g_value_set_object (value, self->file);
       break;
 
+    case PROP_ALWAYS_ASK:
+      g_value_set_boolean (value, self->always_ask);
+      break;
+
+    case PROP_WRITABLE:
+      g_value_set_boolean (value, self->writable);
+      break;
+
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
       break;
@@ -111,6 +123,14 @@ gtk_file_launcher_set_property (GObject      *object,
     {
     case PROP_FILE:
       gtk_file_launcher_set_file (self, g_value_get_object (value));
+      break;
+
+    case PROP_ALWAYS_ASK:
+      gtk_file_launcher_set_always_ask (self, g_value_get_boolean (value));
+      break;
+
+    case PROP_WRITABLE:
+      gtk_file_launcher_set_writable (self, g_value_get_boolean (value));
       break;
 
     default:
@@ -139,6 +159,31 @@ gtk_file_launcher_class_init (GtkFileLauncherClass *class)
       g_param_spec_object ("file", NULL, NULL,
                            G_TYPE_FILE,
                            G_PARAM_READWRITE|G_PARAM_STATIC_STRINGS|G_PARAM_EXPLICIT_NOTIFY);
+
+  /**
+   * GtkFileLauncher:always-ask: (attributes org.gtk.Property.get=gtk_file_launcher_get_always_ask org.gtk.Property.set=gtk_file_launcher_set_always_ask)
+   *
+   * Whether to ask the user to choose an app for opening the file. If `FALSE`,
+   * the file might be opened with a default app or the previous choice.
+   *
+   * Since: 4.12
+   */
+  properties[PROP_ALWAYS_ASK] =
+      g_param_spec_boolean ("always-ask", NULL, NULL,
+                            FALSE,
+                            G_PARAM_READWRITE|G_PARAM_STATIC_STRINGS|G_PARAM_EXPLICIT_NOTIFY);
+
+  /**
+   * GtkFileLauncher:writable: (attributes org.gtk.Property.get=gtk_file_launcher_get_writable org.gtk.Property.set=gtk_file_launcher_set_writable)
+   *
+   * Whether to make the file writable for the handler.
+   *
+   * Since: 4.14
+   */
+  properties[PROP_WRITABLE] =
+      g_param_spec_boolean ("writable", NULL, NULL,
+                            FALSE,
+                            G_PARAM_READWRITE|G_PARAM_STATIC_STRINGS|G_PARAM_EXPLICIT_NOTIFY);
 
   g_object_class_install_properties (object_class, NUM_PROPERTIES, properties);
 }
@@ -207,6 +252,89 @@ gtk_file_launcher_set_file (GtkFileLauncher *self,
   g_object_notify_by_pspec (G_OBJECT (self), properties[PROP_FILE]);
 }
 
+/**
+ * gtk_file_launcher_get_always_ask:
+ * @self: a `GtkFileLauncher`
+ *
+ * Returns whether to ask the user to choose an app for opening the file.
+ *
+ * Returns: `TRUE` if always asking for app
+ *
+ * Since: 4.12
+ */
+gboolean
+gtk_file_launcher_get_always_ask (GtkFileLauncher *self)
+{
+  g_return_val_if_fail (GTK_IS_FILE_LAUNCHER (self), FALSE);
+
+  return self->always_ask;
+}
+
+/**
+ * gtk_file_launcher_set_always_ask:
+ * @self: a `GtkFileLauncher`
+ * @always_ask: a `gboolean`
+ *
+ * Sets whether to awlays ask the user to choose an app for opening the file.
+ * If `FALSE`, the file might be opened with a default app or the previous choice.
+ *
+ * Since: 4.12
+ */
+void
+gtk_file_launcher_set_always_ask (GtkFileLauncher *self,
+                                  gboolean         always_ask)
+{
+  g_return_if_fail (GTK_IS_FILE_LAUNCHER (self));
+
+  if (self->always_ask == always_ask)
+    return;
+
+  self->always_ask = always_ask;
+
+  g_object_notify_by_pspec (G_OBJECT (self), properties[PROP_ALWAYS_ASK]);
+}
+
+/**
+ * gtk_file_launcher_get_writable:
+ * @self: a `GtkFileLauncher`
+ *
+ * Returns whether to make the file writable for the handler.
+ *
+ * Returns: `TRUE` if the file will be made writable
+ *
+ * Since: 4.14
+ */
+gboolean
+gtk_file_launcher_get_writable (GtkFileLauncher *self)
+{
+  g_return_val_if_fail (GTK_IS_FILE_LAUNCHER (self), FALSE);
+
+  return self->writable;
+}
+
+/**
+ * gtk_file_launcher_set_writable:
+ * @self: a `GtkFileLauncher`
+ * @writable: a `gboolean`
+ *
+ * Sets whether to make the file writable for the handler.
+ *
+ * Since: 4.14
+ */
+void
+gtk_file_launcher_set_writable (GtkFileLauncher *self,
+                                gboolean         writable)
+{
+  g_return_if_fail (GTK_IS_FILE_LAUNCHER (self));
+
+  if (self->writable == writable)
+    return;
+
+  self->writable = writable;
+
+  g_object_notify_by_pspec (G_OBJECT (self), properties[PROP_WRITABLE]);
+}
+
 /* }}} */
 /* {{{ Async implementation */
 
@@ -229,9 +357,9 @@ open_done (GObject      *source,
 #endif
 
 static void
-show_folder_done (GObject      *source,
-                  GAsyncResult *result,
-                  gpointer      data)
+show_item_done (GObject      *source,
+                GAsyncResult *result,
+                gpointer      data)
 {
   GDBusConnection *bus = G_DBUS_CONNECTION (source);
   GTask *task = G_TASK (data);
@@ -261,11 +389,10 @@ show_folder_done (GObject      *source,
 #define FILE_MANAGER_DBUS_PATH "/org/freedesktop/FileManager1"
 
 static void
-show_folder (GtkWindow           *parent,
-             const char          *uri,
-             GCancellable        *cancellable,
-             GAsyncReadyCallback  callback,
-             gpointer             user_data)
+show_item (GtkWindow    *parent,
+           const char   *uri,
+           GCancellable *cancellable,
+           GTask        *task)
 {
   GDBusConnection *bus;
   GVariantBuilder uris_builder = G_VARIANT_BUILDER_INIT (G_VARIANT_TYPE_STRING_ARRAY);
@@ -274,10 +401,10 @@ show_folder (GtkWindow           *parent,
 
   if (!bus)
     {
-      g_task_return_new_error (G_TASK (user_data),
+      g_task_return_new_error (task,
                                GTK_DIALOG_ERROR, GTK_DIALOG_ERROR_FAILED,
                                "Session bus not available");
-      g_object_unref (G_TASK (user_data));
+      g_object_unref (task);
       return;
     }
 
@@ -287,14 +414,14 @@ show_folder (GtkWindow           *parent,
                           FILE_MANAGER_DBUS_NAME,
                           FILE_MANAGER_DBUS_PATH,
                           FILE_MANAGER_DBUS_IFACE,
-                          "ShowFolders",
+                          "ShowItems",
                           g_variant_new ("(ass)", &uris_builder, ""),
                           NULL,   /* ignore returned type */
                           G_DBUS_CALL_FLAGS_NONE,
                           -1,
                           cancellable,
-                          show_folder_done,
-                          user_data);
+                          show_item_done,
+                          task);
 }
 
 G_GNUC_BEGIN_IGNORE_DEPRECATIONS
@@ -369,7 +496,15 @@ gtk_file_launcher_launch (GtkFileLauncher     *self,
 #ifndef G_OS_WIN32
   if (gtk_openuri_portal_is_available ())
     {
-      gtk_openuri_portal_open_async (self->file, FALSE, parent, cancellable, open_done, task);
+      GtkOpenuriFlags flags = 0;
+
+      if (self->always_ask)
+        flags |= GTK_OPENURI_FLAGS_ASK;
+
+      if (self->writable)
+        flags |= GTK_OPENURI_FLAGS_WRITABLE;
+
+      gtk_openuri_portal_open_async (self->file, FALSE, flags, parent, cancellable, open_done, task);
     }
   else
 #endif
@@ -463,14 +598,16 @@ gtk_file_launcher_open_containing_folder (GtkFileLauncher     *self,
 #ifndef G_OS_WIN32
   if (gtk_openuri_portal_is_available ())
     {
-      gtk_openuri_portal_open_async (self->file, TRUE, parent, cancellable, open_done, task);
+      GtkOpenuriFlags flags = 0;
+
+      gtk_openuri_portal_open_async (self->file, TRUE, flags, parent, cancellable, open_done, task);
     }
   else
 #endif
     {
       char *uri = g_file_get_uri (self->file);
 
-      show_folder (parent, uri, cancellable, show_folder_done, task);
+      show_item (parent, uri, cancellable, task);
 
       g_free (uri);
     }

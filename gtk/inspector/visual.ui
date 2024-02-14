@@ -382,7 +382,7 @@
                             <property name="spacing">40</property>
                             <child>
                               <object class="GtkLabel" id="fps_label">
-                                <property name="label" translatable="yes">Show fps overlay</property>
+                                <property name="label" translatable="yes">Show Framerate</property>
                                 <property name="halign">start</property>
                                 <property name="valign">baseline</property>
                                 <property name="xalign">0.0</property>
@@ -427,23 +427,24 @@
                     </child>
                     <child>
                       <object class="GtkListBoxRow">
+                        <property name="tooltip-text" translatable="yes">Tints all the places where the current renderer uses Cairo instead of the GPU.</property>
                         <child>
                           <object class="GtkBox">
                             <property name="spacing">40</property>
                             <child>
-                              <object class="GtkLabel" id="fallback_label">
-                                <property name="label" translatable="yes">Show Fallback Rendering</property>
+                              <object class="GtkLabel" id="cairo_label">
+                                <property name="label" translatable="yes">Show Cairo Rendering</property>
                                 <property name="halign">start</property>
                                 <property name="valign">baseline</property>
                                 <property name="xalign">0.0</property>
                               </object>
                             </child>
                             <child>
-                              <object class="GtkSwitch" id="fallback_switch">
+                              <object class="GtkSwitch" id="cairo_switch">
                                 <property name="halign">end</property>
                                 <property name="valign">center</property>
                                 <property name="hexpand">1</property>
-                                <signal name="notify::active" handler="fallback_activate"/>
+                                <signal name="notify::active" handler="cairo_activate"/>
                               </object>
                             </child>
                           </object>
@@ -625,34 +626,50 @@
                         </child>
                       </object>
                     </child>
-                  </object>
-                </child>
-                <child>
-                  <object class="GtkListBox" id="misc_box">
-                    <property name="selection-mode">none</property>
-                    <property name="halign">center</property>
-                    <style>
-                      <class name="rich-list"/>
-                      <class name="boxed-list"/>
-                    </style>
                     <child>
                       <object class="GtkListBoxRow">
                         <child>
                           <object class="GtkBox">
                             <property name="spacing">40</property>
                             <child>
-                              <object class="GtkLabel" id="touchscreen_label">
-                                <property name="label" translatable="yes">Simulate Touchscreen</property>
+                              <object class="GtkLabel" id="a11y_label">
+                                <property name="label" translatable="yes">Show Accessibility warnings</property>
                                 <property name="halign">start</property>
                                 <property name="valign">baseline</property>
                                 <property name="xalign">0.0</property>
                               </object>
                             </child>
                             <child>
-                              <object class="GtkSwitch" id="touchscreen_switch">
+                              <object class="GtkSwitch" id="a11y_switch">
                                 <property name="halign">end</property>
                                 <property name="valign">center</property>
                                 <property name="hexpand">1</property>
+                                <signal name="notify::active" handler="a11y_activate"/>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkListBoxRow">
+                        <child>
+                          <object class="GtkBox">
+                            <property name="spacing">40</property>
+                            <child>
+                              <object class="GtkLabel" id="subsurface_label">
+                                <property name="label" translatable="yes">Show Graphics Offload</property>
+                                <property name="halign">start</property>
+                                <property name="valign">baseline</property>
+                                <property name="xalign">0.0</property>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="GtkSwitch" id="subsurface_switch">
+                                <property name="halign">end</property>
+                                <property name="valign">center</property>
+                                <property name="hexpand">1</property>
+                                <signal name="notify::active" handler="subsurface_activate"/>
                               </object>
                             </child>
                           </object>
@@ -702,11 +719,11 @@
       <widget name="hidpi_label"/>
       <widget name="animation_label"/>
       <widget name="updates_label"/>
-      <widget name="fallback_label"/>
+      <widget name="cairo_label"/>
       <widget name="baselines_label"/>
       <widget name="layout_label_box"/>
       <widget name="focus_label"/>
-      <widget name="touchscreen_label"/>
+      <widget name="subsurface_label"/>
     </widgets>
   </object>
   <object class="GtkSizeGroup">
@@ -728,7 +745,6 @@
     <widgets>
       <widget name="visual_box"/>
       <widget name="debug_box"/>
-      <widget name="misc_box"/>
       <widget name="inspector_box"/>
     </widgets>
   </object>

@@ -19,8 +19,7 @@
  * License along with this library. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef __GDK_MONITOR_PRIVATE_H__
-#define __GDK_MONITOR_PRIVATE_H__
+#pragma once
 
 #include "gdkmonitor.h"
 
@@ -45,6 +44,8 @@ struct _GdkMonitor {
   int refresh_rate;
   GdkSubpixelLayout subpixel_layout;
   gboolean valid;
+  double scale;
+  gboolean scale_set;
 };
 
 struct _GdkMonitorClass {
@@ -65,7 +66,9 @@ void            gdk_monitor_set_physical_size   (GdkMonitor *monitor,
                                                  int         width_mm,
                                                  int         height_mm);
 void            gdk_monitor_set_scale_factor    (GdkMonitor *monitor,
-                                                 int         scale);
+                                                 int         scale_factor);
+void            gdk_monitor_set_scale           (GdkMonitor *monitor,
+                                                 double      scale);
 void            gdk_monitor_set_refresh_rate    (GdkMonitor *monitor,
                                                  int         refresh_rate);
 void            gdk_monitor_set_subpixel_layout (GdkMonitor        *monitor,
@@ -76,4 +79,3 @@ void            gdk_monitor_set_description     (GdkMonitor *monitor,
 
 G_END_DECLS
 
-#endif  /* __GDK_MONITOR_PRIVATE_H__ */

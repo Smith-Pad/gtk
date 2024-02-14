@@ -232,6 +232,8 @@ gtk_action_muxer_list_actions (GtkActionMuxer *muxer,
   GHashTable *actions;
   char **keys;
 
+  g_return_val_if_fail (GTK_IS_ACTION_MUXER (muxer), NULL);
+
   actions = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
 
   for ( ; muxer != NULL; muxer = muxer->parent)
@@ -322,6 +324,9 @@ gtk_action_muxer_get_group (GtkActionMuxer *muxer,
                             const char     *group_name)
 {
   Group *group;
+
+  if (!muxer->groups)
+    return NULL;
 
   group = g_hash_table_lookup (muxer->groups, group_name);
   if (group)
@@ -440,23 +445,26 @@ notify_observers_added (GtkActionMuxer *muxer,
       gboolean enabled;
       GVariant *state;
       GSList *node;
+      GSList *action_watchers;
 
-      if (!action->watchers)
+      action_watchers = action ? action->watchers : NULL;
+
+      if (!action_watchers)
         continue;
 
-      for (node = action ? action->watchers : NULL; node; node = node->next)
+      for (node = action_watchers; node; node = node->next)
         gtk_action_observer_primary_accel_changed (node->data, GTK_ACTION_OBSERVABLE (muxer),
                                                    action_name, NULL);
 
       gtk_action_observable_register_observer (GTK_ACTION_OBSERVABLE (parent), action_name, GTK_ACTION_OBSERVER (muxer));
 
-      if (!action_muxer_query_action (parent, action_name,
+      if (!action_muxer_query_action (muxer, action_name,
                                       &enabled, &parameter_type,
                                       NULL, NULL, &state,
                                       TRUE))
         continue;
 
-      for (node = action->watchers; node; node = node->next)
+      for (node = action_watchers; node; node = node->next)
         {
           gtk_action_observer_action_added (node->data,
                                             GTK_ACTION_OBSERVABLE (muxer),

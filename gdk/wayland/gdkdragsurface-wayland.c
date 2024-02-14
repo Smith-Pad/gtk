@@ -93,7 +93,7 @@ gdk_wayland_drag_surface_compute_size (GdkSurface *surface)
       gdk_wayland_surface_update_size (surface,
                                        impl->next_layout.configured_width,
                                        impl->next_layout.configured_height,
-                                       impl->scale);
+                                       &impl->scale);
 
       impl->next_layout.surface_geometry_dirty = FALSE;
     }
@@ -102,9 +102,25 @@ gdk_wayland_drag_surface_compute_size (GdkSurface *surface)
 }
 
 static void
+gdk_wayland_drag_surface_constructed (GObject *object)
+{
+  GdkSurface *surface = GDK_SURFACE (object);
+  GdkFrameClock *frame_clock;
+
+  frame_clock = _gdk_frame_clock_idle_new ();
+  gdk_surface_set_frame_clock (surface, frame_clock);
+  g_object_unref (frame_clock);
+
+  G_OBJECT_CLASS (gdk_wayland_drag_surface_parent_class)->constructed (object);
+}
+
+static void
 gdk_wayland_drag_surface_class_init (GdkWaylandDragSurfaceClass *class)
 {
+  GObjectClass *object_class = G_OBJECT_CLASS (class);
   GdkSurfaceClass *surface_class = GDK_SURFACE_CLASS (class);
+
+  object_class->constructed = gdk_wayland_drag_surface_constructed;
 
   surface_class->compute_size = gdk_wayland_drag_surface_compute_size;
 }
@@ -126,9 +142,6 @@ gdk_wayland_drag_surface_present (GdkDragSurface *drag_surface,
 {
   GdkSurface *surface = GDK_SURFACE (drag_surface);
   GdkWaylandSurface *impl = GDK_WAYLAND_SURFACE (surface);
-
-  if (!impl->display_server.wl_surface)
-    gdk_wayland_surface_create_wl_surface (surface);
 
   impl->next_layout.configured_width = width;
   impl->next_layout.configured_height = height;

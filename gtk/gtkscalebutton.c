@@ -71,8 +71,14 @@
  *
  * # CSS nodes
  *
- * `GtkScaleButton` has a single CSS node with name button. To differentiate
- * it from a plain `GtkButton`, it gets the .scale style class.
+ * ```
+ * scalebutton.scale
+ * ╰── button.toggle
+ *     ╰── <icon>
+ * ```
+ *
+ * `GtkScaleButton` has a single CSS node with name scalebutton and `.scale`
+ * style class, and contains a `button` node with a `.toggle` style class.
  */
 
 
@@ -96,7 +102,8 @@ enum
   PROP_SIZE,
   PROP_ADJUSTMENT,
   PROP_ICONS,
-  PROP_ACTIVE
+  PROP_ACTIVE,
+  PROP_HAS_FRAME
 };
 
 typedef struct
@@ -229,7 +236,7 @@ gtk_scale_button_class_init (GtkScaleButtonClass *klass)
                                    PROP_ADJUSTMENT,
                                    g_param_spec_object ("adjustment", NULL, NULL,
                                                         GTK_TYPE_ADJUSTMENT,
-                                                        GTK_PARAM_READWRITE));
+                                                        GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY));
 
   /**
    * GtkScaleButton:icons: (attributes org.gtk.Property.set=gtk_scale_button_set_icons)
@@ -269,6 +276,19 @@ gtk_scale_button_class_init (GtkScaleButtonClass *klass)
                                    g_param_spec_boolean ("active", NULL, NULL,
                                                          FALSE,
                                                          GTK_PARAM_READABLE));
+
+  /**
+   * GtkScaleButton:has-frame: (attributes org.gtk.Property.get=gtk_scale_button_get_has_frame org.gtk.Property.set=gtk_scale_button_set_has_frame)
+   *
+   * If the scale button has a frame.
+   *
+   * Since: 4.14
+   */
+  g_object_class_install_property (gobject_class,
+                                   PROP_HAS_FRAME,
+                                   g_param_spec_boolean ("has-frame", NULL, NULL,
+                                                         FALSE,
+                                                         GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY));
 
   /**
    * GtkScaleButton::value-changed:
@@ -368,6 +388,7 @@ gtk_scale_button_class_init (GtkScaleButtonClass *klass)
   gtk_widget_class_bind_template_callback (widget_class, cb_popup_mapped);
 
   gtk_widget_class_set_css_name (widget_class, I_("scalebutton"));
+  gtk_widget_class_set_accessible_role (widget_class, GTK_ACCESSIBLE_ROLE_GROUP);
 }
 
 static gboolean
@@ -502,6 +523,9 @@ gtk_scale_button_set_property (GObject       *object,
       gtk_scale_button_set_icons (button,
                                   (const char **)g_value_get_boxed (value));
       break;
+    case PROP_HAS_FRAME:
+      gtk_scale_button_set_has_frame (button, g_value_get_boolean (value));
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -533,6 +557,9 @@ gtk_scale_button_get_property (GObject     *object,
       break;
     case PROP_ACTIVE:
       g_value_set_boolean (value, gtk_scale_button_get_active (button));
+      break;
+    case PROP_HAS_FRAME:
+      g_value_set_boolean (value, gtk_scale_button_get_has_frame (button));
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -810,6 +837,84 @@ gtk_scale_button_get_active (GtkScaleButton *button)
   return gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON (priv->button));
 }
 
+/**
+ * gtk_scale_button_get_has_frame: (attributes org.gtk.Method.get_property=has-frame)
+ * @button: a `GtkScaleButton`
+ *
+ * Returns whether the button has a frame.
+ *
+ * Returns: %TRUE if the button has a frame
+ *
+ * Since: 4.14
+ */
+gboolean
+gtk_scale_button_get_has_frame (GtkScaleButton *button)
+{
+  GtkScaleButtonPrivate *priv = gtk_scale_button_get_instance_private (button);
+
+  g_return_val_if_fail (GTK_IS_SCALE_BUTTON (button), TRUE);
+
+  return gtk_button_get_has_frame (GTK_BUTTON (priv->button));
+}
+
+/**
+ * gtk_scale_button_set_has_frame: (attributes org.gtk.Method.set_property=has-frame)
+ * @button: a `GtkScaleButton`
+ * @has_frame: whether the button should have a visible frame
+ *
+ * Sets the style of the button.
+ *
+ * Since: 4.14
+ */
+void
+gtk_scale_button_set_has_frame (GtkScaleButton *button,
+                                gboolean        has_frame)
+{
+  GtkScaleButtonPrivate *priv = gtk_scale_button_get_instance_private (button);
+
+  g_return_if_fail (GTK_IS_SCALE_BUTTON (button));
+
+  if (gtk_button_get_has_frame (GTK_BUTTON (priv->button)) == has_frame)
+    return;
+
+  gtk_button_set_has_frame (GTK_BUTTON (priv->button), has_frame);
+  g_object_notify (G_OBJECT (button), "has-frame");
+}
+
+static void
+apply_orientation (GtkScaleButton *button,
+                   GtkOrientation  orientation)
+{
+  GtkScaleButtonPrivate *priv = gtk_scale_button_get_instance_private (button);
+
+  if (priv->applied_orientation != orientation)
+    {
+      priv->applied_orientation = orientation;
+
+      gtk_orientable_set_orientation (GTK_ORIENTABLE (priv->box), orientation);
+      gtk_orientable_set_orientation (GTK_ORIENTABLE (priv->scale), orientation);
+
+      if (orientation == GTK_ORIENTATION_VERTICAL)
+        {
+          gtk_box_reorder_child_after (GTK_BOX (priv->box), priv->scale,
+                                                            priv->plus_button);
+          gtk_box_reorder_child_after (GTK_BOX (priv->box), priv->minus_button,
+                                                            priv->scale);
+          gtk_widget_set_size_request (GTK_WIDGET (priv->scale), -1, SCALE_SIZE);
+          gtk_range_set_inverted (GTK_RANGE (priv->scale), TRUE);
+        }
+      else
+        {
+          gtk_box_reorder_child_after (GTK_BOX (priv->box), priv->scale,
+                                                            priv->minus_button);
+          gtk_box_reorder_child_after (GTK_BOX (priv->box), priv->plus_button,
+                                                            priv->scale);
+          gtk_widget_set_size_request (GTK_WIDGET (priv->scale), SCALE_SIZE, -1);
+          gtk_range_set_inverted (GTK_RANGE (priv->scale), FALSE);
+        }
+    }
+}
+
 static void
 gtk_scale_button_set_orientation_private (GtkScaleButton *button,
                                           GtkOrientation  orientation)
@@ -819,6 +924,9 @@ gtk_scale_button_set_orientation_private (GtkScaleButton *button,
   if (priv->orientation != orientation)
     {
       priv->orientation = orientation;
+
+      apply_orientation (button, priv->orientation);
+
       g_object_notify (G_OBJECT (button), "orientation");
     }
 }
@@ -854,6 +962,8 @@ gtk_scale_popup (GtkWidget *widget)
 {
   GtkScaleButton *button = GTK_SCALE_BUTTON (widget);
   GtkScaleButtonPrivate *priv = gtk_scale_button_get_instance_private (button);
+
+  apply_orientation (button, priv->orientation);
 
   gtk_toggle_button_set_active (GTK_TOGGLE_BUTTON (priv->button), TRUE);
 }

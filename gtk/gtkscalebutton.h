@@ -31,8 +31,7 @@
  * GTK+ at ftp://ftp.gtk.org/pub/gtk/.
  */
 
-#ifndef __GTK_SCALE_BUTTON_H__
-#define __GTK_SCALE_BUTTON_H__
+#pragma once
 
 #if !defined (__GTK_H_INSIDE__) && !defined (GTK_COMPILATION)
 #error "Only <gtk/gtk.h> can be included directly."
@@ -98,9 +97,13 @@ GDK_AVAILABLE_IN_ALL
 GtkWidget *      gtk_scale_button_get_popup        (GtkScaleButton  *button);
 GDK_AVAILABLE_IN_4_10
 gboolean         gtk_scale_button_get_active       (GtkScaleButton  *button);
+GDK_AVAILABLE_IN_4_14
+gboolean         gtk_scale_button_get_has_frame    (GtkScaleButton  *button);
+GDK_AVAILABLE_IN_4_14
+void             gtk_scale_button_set_has_frame    (GtkScaleButton  *button,
+                                                    gboolean         has_frame);
 
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(GtkScaleButton, g_object_unref)
 
 G_END_DECLS
 
-#endif /* __GTK_SCALE_BUTTON_H__ */

@@ -22,14 +22,14 @@
  * GTK+ at ftp://ftp.gtk.org/pub/gtk/.
  */
 
-#ifndef __GTK_RANGE_H__
-#define __GTK_RANGE_H__
+#pragma once
 
 
 #if !defined (__GTK_H_INSIDE__) && !defined (GTK_COMPILATION)
 #error "Only <gtk/gtk.h> can be included directly."
 #endif
 
+#include <gtk/gtkborder.h>
 #include <gtk/gtkwidget.h>
 
 
@@ -152,4 +152,3 @@ G_DEFINE_AUTOPTR_CLEANUP_FUNC(GtkRange, g_object_unref)
 G_END_DECLS
 
 
-#endif /* __GTK_RANGE_H__ */

@@ -148,14 +148,15 @@ static gboolean
 gsk_render_node_real_can_diff (const GskRenderNode *node1,
                                const GskRenderNode *node2)
 {
-  return FALSE;
+  return TRUE;
 }
 
 static void
 gsk_render_node_real_diff (GskRenderNode  *node1,
                            GskRenderNode  *node2,
-                           cairo_region_t *region)
+                           GskDiffData    *data)
 {
+  gsk_render_node_diff_impossible (node1, node2, data);
 }
 
 static void
@@ -229,50 +230,6 @@ gsk_render_node_get_type (void)
   return render_node_type__volatile;
 }
 
-typedef struct
-{
-  GskRenderNodeType node_type;
-
-  void     (* finalize) (GskRenderNode        *node);
-  void     (* draw)     (GskRenderNode        *node,
-                         cairo_t              *cr);
-  gboolean (* can_diff) (const GskRenderNode  *node1,
-                         const GskRenderNode  *node2);
-  void     (* diff)     (GskRenderNode        *node1,
-                         GskRenderNode        *node2,
-                         cairo_region_t       *region);
-} RenderNodeClassData;
-
-static void
-gsk_render_node_generic_class_init (gpointer g_class,
-                                    gpointer class_data)
-{
-  GskRenderNodeClass *node_class = g_class;
-  RenderNodeClassData *node_data = class_data;
-
-  /* Mandatory */
-  node_class->node_type = node_data->node_type;
-
-  /* Optional */
-  if (node_data->finalize != NULL)
-    node_class->finalize = node_data->finalize;
-  if (node_data->can_diff != NULL)
-    node_class->can_diff = node_data->can_diff;
-
-  /* Mandatory */
-  node_class->draw = node_data->draw;
-  node_class->diff = node_data->diff;
-
-  g_free (node_data);
-}
-
-static gboolean
-gsk_render_node_can_diff_true (const GskRenderNode *node1,
-                               const GskRenderNode *node2)
-{
-  return TRUE;
-}
-
 /*< private >
  * gsk_render_node_type_register_static:
  * @node_name: the name of the node
@@ -284,35 +241,20 @@ gsk_render_node_can_diff_true (const GskRenderNode *node1,
  * Returns: the newly registered GType
  */
 GType
-gsk_render_node_type_register_static (const char                  *node_name,
-                                      const GskRenderNodeTypeInfo *node_info)
+gsk_render_node_type_register_static (const char     *node_name,
+                                      gsize           instance_size,
+                                      GClassInitFunc  class_init)
 {
   GTypeInfo info;
 
   info.class_size = sizeof (GskRenderNodeClass);
   info.base_init = NULL;
   info.base_finalize = NULL;
-  info.class_init = gsk_render_node_generic_class_init;
+  info.class_init = class_init;
   info.class_finalize = NULL;
-
-  /* Avoid having a class_init() and a class struct for every GskRenderNode,
-   * by passing the various virtual functions and class data when initializing
-   * the base class
-   */
-  info.class_data = g_new (RenderNodeClassData, 1);
-  ((RenderNodeClassData *) info.class_data)->node_type = node_info->node_type;
-  ((RenderNodeClassData *) info.class_data)->finalize = node_info->finalize;
-  ((RenderNodeClassData *) info.class_data)->draw = node_info->draw;
-  ((RenderNodeClassData *) info.class_data)->can_diff = node_info->can_diff != NULL
-                                                      ? node_info->can_diff
-                                                      : gsk_render_node_can_diff_true;
-  ((RenderNodeClassData *) info.class_data)->diff = node_info->diff != NULL
-                                                  ? node_info->diff
-                                                  : gsk_render_node_diff_impossible;
-
-  info.instance_size = node_info->instance_size;
+  info.instance_size = instance_size;
   info.n_preallocs = 0;
-  info.instance_init = (GInstanceInitFunc) node_info->instance_init;
+  info.instance_init = NULL;
   info.value_table = NULL;
 
   return g_type_register_static (GSK_TYPE_RENDER_NODE, node_name, &info, 0);
@@ -345,14 +287,20 @@ gsk_render_node_alloc (GskRenderNodeType node_type)
  * Returns: (transfer full): the `GskRenderNode` with an additional reference
  */
 GskRenderNode *
-gsk_render_node_ref (GskRenderNode *node)
+(gsk_render_node_ref) (GskRenderNode *node)
 {
   g_return_val_if_fail (GSK_IS_RENDER_NODE (node), NULL);
 
-  g_atomic_ref_count_inc (&node->ref_count);
-
-  return node;
+  return _gsk_render_node_ref (node);
 }
+
+void
+_gsk_render_node_unref (GskRenderNode *node)
+{
+  if G_UNLIKELY (g_atomic_ref_count_dec (&node->ref_count))
+    GSK_RENDER_NODE_GET_CLASS (node)->finalize (node);
+}
+
 
 /**
  * gsk_render_node_unref:
@@ -364,12 +312,11 @@ gsk_render_node_ref (GskRenderNode *node)
  * freed.
  */
 void
-gsk_render_node_unref (GskRenderNode *node)
+(gsk_render_node_unref) (GskRenderNode *node)
 {
   g_return_if_fail (GSK_IS_RENDER_NODE (node));
 
-  if (g_atomic_ref_count_dec (&node->ref_count))
-    GSK_RENDER_NODE_GET_CLASS (node)->finalize (node);
+  _gsk_render_node_unref (node);
 }
 
 
@@ -439,13 +386,8 @@ gsk_render_node_draw (GskRenderNode *node,
 
   cairo_save (cr);
 
-  GSK_DEBUG (CAIRO, "Rendering node %s[%p]",
-                    g_type_name_from_instance ((GTypeInstance *) node),
-                    node);
-
   GSK_RENDER_NODE_GET_CLASS (node)->draw (node, cr);
 
-#ifdef G_ENABLE_DEBUG
   if (GSK_DEBUG_CHECK (GEOMETRY))
     {
       cairo_set_operator (cr, CAIRO_OPERATOR_OVER);
@@ -455,7 +397,6 @@ gsk_render_node_draw (GskRenderNode *node,
       cairo_set_source_rgba (cr, 0, 0, 0, 0.5);
       cairo_stroke (cr);
     }
-#endif
 
   cairo_restore (cr);
 
@@ -464,6 +405,58 @@ gsk_render_node_draw (GskRenderNode *node,
       g_warning ("drawing failure for render node %s: %s",
                  g_type_name_from_instance ((GTypeInstance *) node),
                  cairo_status_to_string (cairo_status (cr)));
+    }
+}
+
+/*
+ * gsk_render_node_draw_fallback:
+ * @node: a `GskRenderNode`
+ * @cr: cairo context to draw to
+ *
+ * Like gsk_render_node_draw(), but will overlay an error pattern if
+ * GSK_DEBUG=cairo is enabled.
+ *
+ * This has 2 purposes:
+ * 1. It allows detecting fallbacks in GPU renderers.
+ * 2. Application code can use it to detect where it is using Cairo
+ *    drawing.
+ *
+ * So use this function whenever either of those cases should be detected.
+ */
+void
+gsk_render_node_draw_fallback (GskRenderNode *node,
+                               cairo_t       *cr)
+{
+  gsk_render_node_draw (node, cr);
+
+  if (GSK_DEBUG_CHECK (CAIRO))
+    {
+      /* pink, black
+       * black, pink
+       */
+      static const guint32 fallback_pixels[] = { 0xFFFF00CC, 0xFF000000,
+                                                 0xFF000000, 0xFFFF00CC };
+      static const guint32 cairo_pixels[] = { 0xFF9900FF, 0xFF000000,
+                                              0xFF000000, 0xFF9900FF };
+      const guint32 *pixels;
+      cairo_surface_t *surface;
+
+      cairo_save (cr);
+      if (GSK_RENDER_NODE_TYPE (node) == GSK_CAIRO_NODE)
+        pixels = cairo_pixels;
+      else
+        pixels = fallback_pixels;
+      surface = cairo_image_surface_create_for_data ((guchar *) pixels,
+                                                     CAIRO_FORMAT_ARGB32,
+                                                     2, 2,
+                                                     2 * 4);
+      cairo_scale (cr, 10, 10);
+      cairo_set_source_surface (cr, surface, 0, 0);
+      cairo_pattern_set_filter (cairo_get_source (cr), CAIRO_FILTER_NEAREST);
+      cairo_pattern_set_extend (cairo_get_source (cr), CAIRO_EXTEND_REPEAT);
+      cairo_paint_with_alpha (cr, 0.6);
+      cairo_surface_destroy (surface);
+      cairo_restore (cr);
     }
 }
 
@@ -512,21 +505,21 @@ rectangle_init_from_graphene (cairo_rectangle_int_t *cairo,
 void
 gsk_render_node_diff_impossible (GskRenderNode  *node1,
                                  GskRenderNode  *node2,
-                                 cairo_region_t *region)
+                                 GskDiffData    *data)
 {
   cairo_rectangle_int_t rect;
 
   rectangle_init_from_graphene (&rect, &node1->bounds);
-  cairo_region_union_rectangle (region, &rect);
+  cairo_region_union_rectangle (data->region, &rect);
   rectangle_init_from_graphene (&rect, &node2->bounds);
-  cairo_region_union_rectangle (region, &rect);
+  cairo_region_union_rectangle (data->region, &rect);
 }
 
 /**
  * gsk_render_node_diff:
  * @node1: a `GskRenderNode`
  * @node2: the `GskRenderNode` to compare with
- * @region: a `cairo_region_t` to add the differences to
+ * @data: the diff data to use
  *
  * Compares @node1 and @node2 trying to compute the minimal region of changes.
  *
@@ -539,24 +532,31 @@ gsk_render_node_diff_impossible (GskRenderNode  *node1,
  *
  * Note that the passed in @region may already contain previous results from
  * previous node comparisons, so this function call will only add to it.
- **/
+ */
 void
 gsk_render_node_diff (GskRenderNode  *node1,
                       GskRenderNode  *node2,
-                      cairo_region_t *region)
+                      GskDiffData    *data)
 {
   if (node1 == node2)
     return;
 
   if (_gsk_render_node_get_node_type (node1) == _gsk_render_node_get_node_type (node2))
-    GSK_RENDER_NODE_GET_CLASS (node1)->diff (node1, node2, region);
-
+    {
+      GSK_RENDER_NODE_GET_CLASS (node1)->diff (node1, node2, data);
+    }
   else if (_gsk_render_node_get_node_type (node1) == GSK_CONTAINER_NODE)
-    gsk_container_node_diff_with (node1, node2, region);
+    {
+      gsk_container_node_diff_with (node1, node2, data);
+    }
   else if (_gsk_render_node_get_node_type (node2) == GSK_CONTAINER_NODE)
-    gsk_container_node_diff_with (node2, node1, region);
+    {
+      gsk_container_node_diff_with (node2, node1, data);
+    }
   else
-    gsk_render_node_diff_impossible (node1, node2, region);
+    {
+      gsk_render_node_diff_impossible (node1, node2, data);
+    }
 }
 
 /**
@@ -733,10 +733,10 @@ gsk_value_dup_render_node (const GValue *value)
   return gsk_render_node_ref (value->data[0].v_pointer);
 }
 
-gboolean
-gsk_render_node_prefers_high_depth (const GskRenderNode *node)
+GdkMemoryDepth
+gsk_render_node_get_preferred_depth (const GskRenderNode *node)
 {
-  return node->prefers_high_depth;
+  return node->preferred_depth;
 }
 
 /* Whether we need an offscreen to handle opacity correctly for this node.

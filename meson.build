@@ -1,5 +1,5 @@
 project('gtk', 'c',
-        version: '4.11.1',
+        version: '4.13.8',
         default_options: [
           'buildtype=debugoptimized',
           'warning_level=1',
@@ -7,23 +7,25 @@ project('gtk', 'c',
           # https://github.com/mesonbuild/meson/issues/2289
           'c_std=gnu99',
         ],
-        meson_version : '>= 0.60.0',
+        meson_version : '>= 0.63.0',
         license: 'LGPL-2.1-or-later')
 
-glib_req           = '>= 2.72.0'
-introspection_req  = '>= 1.72.0' # keep this in sync with glib
+# keep these numbers in sync with wrap files where there exist
+glib_req           = '>= 2.76.0'
+introspection_req  = '>= 1.76.0' # keep this in sync with glib
 pango_req          = '>= 1.50.0' # keep this in sync with .gitlab-ci/test-msys.sh
 harfbuzz_req       = '>= 2.6.0'
 fribidi_req        = '>= 1.0.6'
 cairo_req          = '>= 1.14.0'
 gdk_pixbuf_req     = '>= 2.30.0'
-wayland_proto_req  = '>= 1.25'
+wayland_proto_req  = '>= 1.31'
 wayland_req        = '>= 1.21.0'
 graphene_req       = '>= 1.10.0'
 epoxy_req          = '>= 1.4'
 cloudproviders_req = '>= 0.3.1'
 xkbcommon_req      = '>= 0.2.0'
 sysprof_req        = '>= 3.38.0'
+vulkan_req         = '>= 1.3'
 
 fs = import('fs')
 gnome = import('gnome')
@@ -99,6 +101,7 @@ wayland_enabled  = get_option('wayland-backend')
 broadway_enabled = get_option('broadway-backend')
 macos_enabled    = get_option('macos-backend')
 win32_enabled    = get_option('win32-backend')
+vulkan_enabled   = get_option('vulkan')
 
 os_unix   = false
 os_linux  = false
@@ -120,6 +123,7 @@ os_unix = not os_win32
 
 if os_darwin
   wayland_enabled = false
+  vulkan_enabled = false
 else
   macos_enabled = false
 endif
@@ -173,8 +177,8 @@ check_headers = [
   'sys/systeminfo.h',
   'sys/time.h',
   'sys/types.h',
+  'sys/sysmacros.h',
   'unistd.h',
-  'gio/gdesktopappinfo.h'
 ]
 
 foreach h : check_headers
@@ -247,15 +251,23 @@ endif
 
 # Compiler flags
 if cc.get_id() == 'msvc'
-  # Compiler options taken from msvc_recommended_pragmas.h
-  # in GLib, based on _Win32_Programming_ by Rector and Newcomer
+  required_cflags = []
+  required_debug_cflags = '-Zc:preprocessor'
   test_cflags = [
-    '-FImsvc_recommended_pragmas.h',
+    '-FI@0@/build-aux/msvc/msvc_recommended_pragmas.h'.format(meson.project_source_root()),
     '-D_USE_MATH_DEFINES',
-    '-utf-8',
-    '-Zc:preprocessor'
+    required_debug_cflags
   ]
-  add_project_arguments(cc.get_supported_arguments(test_cflags), language: 'c')
+  msvc_supported_cflags = cc.get_supported_arguments(test_cflags)
+  if debug
+    required_cflags += required_debug_cflags
+  endif
+  foreach f : required_cflags
+    if not msvc_supported_cflags.contains(f)
+      error('@0@ required for this build'.format(f))
+    endif
+  endforeach
+  add_project_arguments(msvc_supported_cflags, language: 'c')
 
   add_languages('cpp')
   cxx = meson.get_compiler('cpp')
@@ -297,6 +309,7 @@ elif cc.get_id() == 'gcc' or cc.get_id() == 'clang'
     'address',
     'array-bounds',
     'empty-body',
+    'enum-int-mismatch',
     'implicit',
     'implicit-fallthrough',   # For non-gcc
     'implicit-fallthrough=5', # For GCC, only recognize the attribute and no comments
@@ -307,6 +320,7 @@ elif cc.get_id() == 'gcc' or cc.get_id() == 'clang'
     'missing-declarations',
     'missing-prototypes',
     'nonnull',
+    'override-init',
     'pointer-to-int-cast',
     'redundant-decls',
     'return-type',
@@ -337,21 +351,16 @@ else
   test_cflags = []
 endif
 
-common_cflags = cc.get_supported_arguments(test_cflags)
-
 # Symbol visibility
 if get_option('default_library') != 'static'
   if os_win32
     cdata.set('DLL_EXPORT', true)
-    cdata.set('_GDK_EXTERN', '__declspec(dllexport) extern')
-    if cc.get_id() != 'msvc'
-      common_cflags += ['-fvisibility=hidden']
-    endif
   else
-    cdata.set('_GDK_EXTERN', '__attribute__((visibility("default"))) extern')
-    common_cflags += ['-fvisibility=hidden']
+    test_cflags += ['-fvisibility=hidden']
   endif
 endif
+
+common_cflags = cc.get_supported_arguments(test_cflags)
 
 common_ldflags = cc.get_supported_link_arguments([
   '-Wl,-Bsymbolic',
@@ -370,13 +379,6 @@ glib_dep       = dependency('glib-2.0', version: glib_req)
 gobject_dep    = dependency('gobject-2.0', version: glib_req)
 if os_win32
   giowin32_dep = dependency('gio-windows-2.0', version: glib_req, required: win32_enabled)
-  if giowin32_dep.version().version_compare('<2.75.0')
-    if cc.get_id() == 'msvc' and get_option('default_library') != 'static'
-      # Override _GLIB_EXTERN on Visual Studio for media modules for glib <= 2.74.x, so that we
-      # avoid error C2375 (redefinition; different linkage) when building the g_io_module_*() bits
-      cdata.set('MODULES_OVERRIDE_GLIB_EXTERN', true)
-    endif
-  endif
 endif
 if os_unix
   giounix_dep  = dependency('gio-unix-2.0', version: glib_req, required: false)
@@ -386,7 +388,8 @@ cairo_dep      = dependency('cairo', version: cairo_req,
                             default_options: ['zlib=enabled', 'tests=disabled'])
 cairogobj_dep  = dependency('cairo-gobject', version: cairo_req)
 pango_dep      = dependency('pango', version: pango_req)
-fribidi_dep    = dependency('fribidi', version: fribidi_req)
+fribidi_dep    = dependency('fribidi', version: fribidi_req,
+                            default_options: ['docs=false'])
 harfbuzz_dep   = dependency('harfbuzz', version: harfbuzz_req,
                             default_options: ['coretext=enabled'])
 
@@ -494,6 +497,10 @@ if wayland_enabled
     'xkbcommon @0@'.format(xkbcommon_req),
     'wayland-egl',
   ]
+
+  if wlprotocolsdep.version().version_compare('>=1.32')
+    cdata.set('HAVE_TOPLEVEL_STATE_SUSPENDED', 1)
+  endif
 endif
 
 x11_pkgs = []
@@ -609,7 +616,10 @@ endif
 # Uses meson's custom vulkan dependency searching. Set the VULKAN_SDK env var
 # to use a custom path for the Vulkan SDK. Bugs that are found with it should
 # be reported upstream and fixed.
-vulkan_dep = dependency('vulkan', required: get_option('vulkan'))
+vulkan_dep = dependency('vulkan',
+                        version: vulkan_req,
+                        required: vulkan_enabled)
+glslc = find_program('glslc', required: vulkan_enabled)
 if vulkan_dep.found()
   have_vulkan = true
   vulkan_pkg_found = vulkan_dep.type_name() == 'pkgconfig'
@@ -617,6 +627,20 @@ else
   have_vulkan = false
   vulkan_pkg_found = false
 endif
+
+if cc.has_header('linux/dma-buf.h')
+  dmabuf_dep = dependency('libdrm',
+    required: os_linux)
+else
+  if os_linux
+    error('OS is Linux, but linux/dma-buf.h not found.')
+  endif
+  dmabuf_dep = dependency('', required: false)
+endif
+cdata.set('HAVE_DMABUF', dmabuf_dep.found())
+# We only care about drm_fourcc.h for all the fourccs,
+# but not about linking to libdrm
+dmabuf_dep = dmabuf_dep.partial_dependency(includes: true, compile_args: true)
 
 cloudproviders_dep = dependency('cloudproviders',
   required: get_option('cloudproviders'),
@@ -642,23 +666,9 @@ if not get_option('sysprof').disabled()
     ],
   )
   cdata.set('HAVE_SYSPROF', libsysprof_capture_dep.found())
-  libsysprof_dep = dependency('sysprof-4',
-    required: false,
-    default_options: [
-      'agent=false',
-      'examples=false',
-      'gtk=false',
-      'tests=false',
-      'tools=false',
-      'libsysprof=true',
-      'sysprofd=none',
-      'help=false',
-    ],
-  )
   profiler_enabled = true
 else
   libsysprof_capture_dep = disabler()
-  libsysprof_dep = disabler()
   profiler_enabled = false
 endif
 
@@ -733,6 +743,11 @@ int main () {
   endif
 endif
 
+if os_unix
+  cpdb_dep = dependency('cpdb-frontend', version : '>=2.0', required: get_option('print-cpdb'))
+  cups_dep = dependency('cups', version : '>=2.0', required: get_option('print-cups'))
+endif
+
 # Introspection
 gir = find_program('g-ir-scanner', required : get_option('introspection'))
 
@@ -741,20 +756,63 @@ if not gir.found() and get_option('introspection').enabled()
 endif
 
 build_gir = gir.found() and (get_option('introspection').enabled() or
-                             (get_option('introspection').allowed() and get_option('gtk_doc')))
+                             (get_option('introspection').allowed() and get_option('documentation')))
+
+# Resource building
+glib_compile_resources = find_program('glib-compile-resources')
+
+objcopy_supports_add_symbol = false
+objcopy_supports_section_alignment = false
+objcopy = find_program('objcopy', required : false)
+if objcopy.found()
+  objcopy_supports_add_symbol = run_command(objcopy, '--help', check: false).stdout().contains('--add-symbol')
+  objcopy_supports_section_alignment = run_command(objcopy, '--help', check: false).stdout().contains('--set-section-alignment')
+endif
+
+ld_is_bfd = false
+ld = find_program('ld', required : false)
+if ld.found()
+  ld_is_bfd = run_command(ld, '--version', check: false).stdout().contains('GNU ld')
+endif
+
+if not meson.is_cross_build() and build_machine.cpu_family() == 'x86_64' and build_machine.system() == 'linux' and objcopy.found() and objcopy_supports_add_symbol and objcopy_supports_section_alignment and ld.found() and ld_is_bfd
+  can_use_objcopy_for_resources = true
+else
+  can_use_objcopy_for_resources = false
+endif
 
 project_build_root = meson.current_build_dir()
 
+gen_visibility_macros = find_program('build-aux/meson/gen-visibility-macros.py')
+
+gen_profile_conf = find_program('build-aux/meson/gen-profile-conf.py')
+
+profile = get_option('profile')
+if profile == 'auto'
+  if gtk_minor_version.is_even()
+    profile = 'default'
+  else
+    profile = 'devel'
+  endif
+endif
+
+profile_conf_h = declare_dependency(
+  sources: custom_target('profile-conf',
+    command: [gen_profile_conf, meson.project_source_root(), profile],
+    capture: true,
+    output: 'profile_conf.h',
+    build_by_default: true,
+    build_always_stale: true,
+  )
+)
+
+subdir('gdk/version')
 subdir('gtk/css')
 subdir('gdk')
 subdir('gsk')
 subdir('gtk')
-if os_unix
-  cpdb_dep = dependency('cpdb-frontend', version : '>=2.0', required: get_option('print-cpdb'))
-  cups_dep = dependency('cups', version : '>=2.0', required: get_option('print-cups'))
-endif
 subdir('modules')
-if get_option('demos')
+if get_option('build-demos')
   subdir('demos')
 endif
 subdir('tools')
@@ -794,28 +852,15 @@ endif
 gsk_packages = [ 'graphene-gobject-1.0 @0@'.format(graphene_req) ]
 gtk_packages = [ 'gio-2.0 @0@'.format(glib_req) ]
 
-gio_pkgname = os_unix ? 'gio-unix-2.0' : 'gio-2.0'
-gdk_private_packages = [
-  '@0@ @1@'.format(gio_pkgname, glib_req),
-  'epoxy @0@'.format(epoxy_req),
-] + x11_pkgs + wayland_pkgs + cairo_backends
-gsk_private_packages = [] # all already in gdk_private_packages
-pangoft2_pkgs = (wayland_enabled or x11_enabled) ? ['pangoft2'] : []
-gtk_private_packages = pangoft2_pkgs
-
-pkgs = []
-pkg_targets = []
-display_backends = []
+enabled_backends = []
 foreach backend: [ 'broadway', 'macos', 'wayland', 'win32', 'x11', ]
   if get_variable('@0@_enabled'.format(backend))
-    pkgs += ['gtk4-@0@'.format(backend)]
-    pkg_targets += backend
-    display_backends += [ backend ]
+    enabled_backends += backend
   endif
 endforeach
 
 common_pc_variables = [
-  'targets=@0@'.format(' '.join(pkg_targets)),
+  'targets=@0@'.format(' '.join(enabled_backends)),
   'gtk_binary_version=@0@'.format(gtk_binary_version),
   'gtk_host=@0@-@1@'.format(host_machine.cpu_family(), host_machine.system()), # FIXME
 ]
@@ -830,13 +875,26 @@ pkg_config.generate(libgtk,
 )
 meson.override_dependency('gtk4', libgtk_dep)
 
-foreach pkg: pkgs
+foreach backend: enabled_backends
+  pkg = 'gtk4-@0@'.format(backend)
   pkg_config.generate(
     filebase: pkg,
     unescaped_variables: common_pc_variables,
     name: 'GTK',
     description: 'GTK Graphical UI Library',
-    requires: 'gtk4',
+    requires: ['gtk4', get_variable('@0@_public_deps'.format(backend), [])],
+  )
+  meson.override_dependency(pkg, libgtk_dep)
+endforeach
+
+foreach a11y_backend: gtk_a11y_backends
+  pkg = 'gtk4-@0@'.format(a11y_backend)
+  pkg_config.generate(
+    filebase: pkg,
+    unescaped_variables: common_pc_variables,
+    name: 'GTK',
+    description: gtk_a11y_backend_info[a11y_backend]['description'],
+    requires: ['gtk4', get_variable('@0@_public_deps'.format(a11y_backend), [])],
   )
   meson.override_dependency(pkg, libgtk_dep)
 endforeach
@@ -861,14 +919,14 @@ if not meson.is_cross_build()
   gnome.post_install(
     glib_compile_schemas: true,
     gio_querymodules: gio_module_dirs,
-    gtk_update_icon_cache: get_option('demos'),
+    gtk_update_icon_cache: get_option('build-demos'),
   )
 else
   message('Not executing post-install steps automatically when cross compiling')
 endif
 
 if not meson.is_subproject()
-    meson.add_dist_script('build-aux/meson/dist-data.py')
+  meson.add_dist_script('build-aux/meson/dist-data.py')
 endif
 
 if host_machine.system() != 'windows'
@@ -881,9 +939,9 @@ endif
 
 #### Summary ####
 
-summary('Display backends', display_backends)
-summary('Print backends', print_backends)
-summary('Media backends', media_backends)
+summary('Display backends', enabled_backends, section: 'Components')
+summary('Print backends', print_backends, section: 'Components')
+summary('Media backends', media_backends, section: 'Components')
 
 summary('Vulkan support', vulkan_dep.found(), section: 'Features')
 summary('Cloud support', cloudproviders_dep.found(), section: 'Features')
@@ -894,18 +952,16 @@ summary('Tracker support', tracker3_dep.found(), section: 'Features')
 summary('Compiler', cc.get_id(), section: 'Toolchain')
 summary('Linker', cc.get_linker_id(), section: 'Toolchain')
 
-# Build
 summary('Debugging', get_option('debug'), section: 'Build')
 summary('Optimization', get_option('optimization'), section: 'Build')
 summary('Introspection', build_gir, section: 'Build')
-summary('Documentation', get_option('gtk_doc'), section: 'Build')
+summary('Documentation', get_option('documentation'), section: 'Build')
 summary('Man pages', get_option('man-pages'), section: 'Build')
 summary('Testsuite', get_option('build-testsuite'), section: 'Build')
 summary('Tests', get_option('build-tests'), section: 'Build')
-summary('Demos', get_option('demos'), section: 'Build')
+summary('Demos', get_option('build-demos'), section: 'Build')
 summary('Examples', get_option('build-examples'), section: 'Build')
 
-# Directories
 summary('prefix', gtk_prefix, section: 'Directories')
 summary('includedir', gtk_includedir, section: 'Directories')
 summary('libdir', gtk_libdir, section: 'Directories')

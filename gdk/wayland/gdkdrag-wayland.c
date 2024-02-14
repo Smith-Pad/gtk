@@ -24,6 +24,7 @@
 #include "gdkdisplay-wayland.h"
 #include <glib/gi18n-lib.h>
 #include "gdkseat-wayland.h"
+#include "gdksurface-wayland-private.h"
 
 #include "gdkdeviceprivate.h"
 
@@ -46,7 +47,6 @@ struct _GdkWaylandDrag
 {
   GdkDrag drag;
   GdkSurface *dnd_surface;
-  struct wl_surface *dnd_wl_surface;
   struct wl_data_source *data_source;
   struct wl_data_offer *offer;
   uint32_t serial;
@@ -340,14 +340,12 @@ gdk_wayland_drag_create_data_source (GdkDrag *drag)
 
   mimetypes = gdk_content_formats_get_mime_types (formats, &n_mimetypes);
 
-#ifdef G_ENABLE_DEBUG
   if (GDK_DISPLAY_DEBUG_CHECK (gdk_drag_get_display (drag), EVENTS))
     {
       char *s = g_strjoinv (" ", (char **)mimetypes);
       gdk_debug_message ("create data source, mime types=%s", s);
       g_free (s);
     }
-#endif
 
   wl_data_source_offer (drag_wayland->data_source, GDK_WAYLAND_LOCAL_DND_MIME_TYPE);
   for (i = 0; i < n_mimetypes; i++)
@@ -382,12 +380,13 @@ _gdk_wayland_surface_drag_begin (GdkSurface         *surface,
 
   drag = GDK_DRAG (drag_wayland);
 
-  drag_wayland->dnd_surface = _gdk_wayland_display_create_surface (display, GDK_SURFACE_DRAG, NULL, 0, 0, 100, 100);
-  drag_wayland->dnd_wl_surface = gdk_wayland_surface_get_wl_surface (drag_wayland->dnd_surface);
+  drag_wayland->dnd_surface = g_object_new (GDK_TYPE_WAYLAND_DRAG_SURFACE,
+                                            "display", display,
+                                            NULL);
 
   gdk_wayland_drag_create_data_source (drag);
 
-  if (GDK_WAYLAND_DISPLAY (display)->data_device_manager_version >= WL_DATA_SOURCE_SET_ACTIONS_SINCE_VERSION)
+  if (wl_data_device_manager_get_version (GDK_WAYLAND_DISPLAY (display)->data_device_manager) >= WL_DATA_SOURCE_SET_ACTIONS_SINCE_VERSION)
     wl_data_source_set_actions (drag_wayland->data_source, gdk_to_wl_actions (actions));
 
   gdk_wayland_seat_set_drag (seat, drag);
@@ -395,8 +394,8 @@ _gdk_wayland_surface_drag_begin (GdkSurface         *surface,
   wl_data_device_start_drag (gdk_wayland_device_get_data_device (device),
                              drag_wayland->data_source,
                              gdk_wayland_surface_get_wl_surface (surface),
-                             drag_wayland->dnd_wl_surface,
-                             _gdk_wayland_seat_get_implicit_grab_serial (seat, NULL));
+                             gdk_wayland_surface_get_wl_surface (drag_wayland->dnd_surface),
+                             _gdk_wayland_seat_get_implicit_grab_serial (seat, device, NULL));
 
   cursor = gdk_drag_get_cursor (drag, gdk_drag_get_selected_action (drag));
   gdk_drag_set_cursor (drag, cursor);

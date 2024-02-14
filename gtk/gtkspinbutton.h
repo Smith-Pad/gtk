@@ -25,8 +25,7 @@
  * GTK+ at ftp://ftp.gtk.org/pub/gtk/.
  */
 
-#ifndef __GTK_SPIN_BUTTON_H__
-#define __GTK_SPIN_BUTTON_H__
+#pragma once
 
 
 #if !defined (__GTK_H_INSIDE__) && !defined (GTK_COMPILATION)
@@ -117,6 +116,13 @@ GtkWidget*      gtk_spin_button_new_with_range     (double   min,
                                                     double   max,
                                                     double   step);
 
+GDK_AVAILABLE_IN_4_14
+void            gtk_spin_button_set_activates_default (GtkSpinButton *spin_button,
+                                                       gboolean       activates_default);
+
+GDK_AVAILABLE_IN_4_14
+gboolean        gtk_spin_button_get_activates_default (GtkSpinButton *spin_button);
+
 GDK_AVAILABLE_IN_ALL
 void            gtk_spin_button_set_adjustment     (GtkSpinButton  *spin_button,
                                                     GtkAdjustment  *adjustment);
@@ -200,4 +206,3 @@ G_DEFINE_AUTOPTR_CLEANUP_FUNC(GtkSpinButton, g_object_unref)
 
 G_END_DECLS
 
-#endif /* __GTK_SPIN_BUTTON_H__ */

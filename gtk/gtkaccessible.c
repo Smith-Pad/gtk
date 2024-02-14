@@ -751,6 +751,41 @@ gtk_accessible_reset_relation (GtkAccessible         *self,
   g_object_unref (context);
 }
 
+/**
+ * gtk_accessible_announce:
+ * @self: a `GtkAccessible`
+ * @message: the string to announce
+ * @priority: the priority of the announcement
+ *
+ * Requests the user's screen reader to announce the given message.
+ *
+ * This kind of notification is useful for messages that
+ * either have only a visual representation or that are not
+ * exposed visually at all, e.g. a notification about a
+ * successful operation.
+ *
+ * Also, by using this API, you can ensure that the message
+ * does not interrupts the user's current screen reader output.
+ *
+ * Since: 4.14
+ */
+void
+gtk_accessible_announce (GtkAccessible                     *self,
+                         const char                        *message,
+                         GtkAccessibleAnnouncementPriority  priority)
+{
+  GtkATContext *context;
+
+  g_return_if_fail (GTK_IS_ACCESSIBLE (self));
+
+  context = gtk_accessible_get_at_context (self);
+  if (context == NULL)
+    return;
+
+  gtk_at_context_announce (context, message, priority);
+  g_object_unref (context);
+}
+
 static const char *role_names[] = {
   [GTK_ACCESSIBLE_ROLE_ALERT] = NC_("accessibility", "alert"),
   [GTK_ACCESSIBLE_ROLE_ALERT_DIALOG] = NC_("accessibility", "alert dialog"),
@@ -830,6 +865,12 @@ static const char *role_names[] = {
   [GTK_ACCESSIBLE_ROLE_TREE_ITEM] = NC_("accessibility", "tree item"),
   [GTK_ACCESSIBLE_ROLE_WIDGET] = NC_("accessibility", "widget"),
   [GTK_ACCESSIBLE_ROLE_WINDOW] = NC_("accessibility", "window"),
+  [GTK_ACCESSIBLE_ROLE_TOGGLE_BUTTON] = NC_("accessibility", "toggle button"),
+  [GTK_ACCESSIBLE_ROLE_APPLICATION] = NC_("accessibility", "application"),
+  [GTK_ACCESSIBLE_ROLE_PARAGRAPH] = NC_("accessibility", "paragraph"),
+  [GTK_ACCESSIBLE_ROLE_BLOCK_QUOTE] = NC_("accessibility", "block quote"),
+  [GTK_ACCESSIBLE_ROLE_ARTICLE] = NC_("accessibility", "article"),
+  [GTK_ACCESSIBLE_ROLE_COMMENT] = NC_("accessibility", "comment"),
 };
 
 /*< private >
@@ -853,6 +894,117 @@ gtk_accessible_role_to_name (GtkAccessibleRole  role,
   return role_names[role];
 }
 
+static struct {
+  GtkAccessibleRole superclass;
+  GtkAccessibleRole role;
+} superclasses[] = {
+  { GTK_ACCESSIBLE_ROLE_COMMAND, GTK_ACCESSIBLE_ROLE_BUTTON },
+  { GTK_ACCESSIBLE_ROLE_COMMAND, GTK_ACCESSIBLE_ROLE_LINK },
+  { GTK_ACCESSIBLE_ROLE_COMMAND, GTK_ACCESSIBLE_ROLE_MENU_ITEM },
+  { GTK_ACCESSIBLE_ROLE_COMPOSITE, GTK_ACCESSIBLE_ROLE_GRID },
+  { GTK_ACCESSIBLE_ROLE_COMPOSITE, GTK_ACCESSIBLE_ROLE_SELECT },
+  { GTK_ACCESSIBLE_ROLE_COMPOSITE, GTK_ACCESSIBLE_ROLE_SPIN_BUTTON },
+  { GTK_ACCESSIBLE_ROLE_COMPOSITE, GTK_ACCESSIBLE_ROLE_TAB_LIST },
+  { GTK_ACCESSIBLE_ROLE_INPUT, GTK_ACCESSIBLE_ROLE_CHECKBOX },
+  { GTK_ACCESSIBLE_ROLE_INPUT, GTK_ACCESSIBLE_ROLE_COMBO_BOX },
+  { GTK_ACCESSIBLE_ROLE_INPUT, GTK_ACCESSIBLE_ROLE_OPTION },
+  { GTK_ACCESSIBLE_ROLE_INPUT, GTK_ACCESSIBLE_ROLE_RADIO },
+  { GTK_ACCESSIBLE_ROLE_INPUT, GTK_ACCESSIBLE_ROLE_SLIDER },
+  { GTK_ACCESSIBLE_ROLE_INPUT, GTK_ACCESSIBLE_ROLE_SPIN_BUTTON },
+  { GTK_ACCESSIBLE_ROLE_INPUT, GTK_ACCESSIBLE_ROLE_TEXT_BOX },
+  { GTK_ACCESSIBLE_ROLE_LANDMARK, GTK_ACCESSIBLE_ROLE_BANNER },
+  { GTK_ACCESSIBLE_ROLE_LANDMARK, GTK_ACCESSIBLE_ROLE_FORM },
+  { GTK_ACCESSIBLE_ROLE_LANDMARK, GTK_ACCESSIBLE_ROLE_MAIN },
+  { GTK_ACCESSIBLE_ROLE_LANDMARK, GTK_ACCESSIBLE_ROLE_NAVIGATION },
+  { GTK_ACCESSIBLE_ROLE_LANDMARK, GTK_ACCESSIBLE_ROLE_REGION },
+  { GTK_ACCESSIBLE_ROLE_LANDMARK, GTK_ACCESSIBLE_ROLE_SEARCH },
+  { GTK_ACCESSIBLE_ROLE_RANGE, GTK_ACCESSIBLE_ROLE_METER },
+  { GTK_ACCESSIBLE_ROLE_RANGE, GTK_ACCESSIBLE_ROLE_PROGRESS_BAR },
+  { GTK_ACCESSIBLE_ROLE_RANGE, GTK_ACCESSIBLE_ROLE_SCROLLBAR },
+  { GTK_ACCESSIBLE_ROLE_RANGE, GTK_ACCESSIBLE_ROLE_SLIDER },
+  { GTK_ACCESSIBLE_ROLE_RANGE, GTK_ACCESSIBLE_ROLE_SPIN_BUTTON },
+  { GTK_ACCESSIBLE_ROLE_SECTION, GTK_ACCESSIBLE_ROLE_ALERT },
+  { GTK_ACCESSIBLE_ROLE_SECTION, GTK_ACCESSIBLE_ROLE_BLOCK_QUOTE },
+  { GTK_ACCESSIBLE_ROLE_SECTION, GTK_ACCESSIBLE_ROLE_CAPTION },
+  { GTK_ACCESSIBLE_ROLE_SECTION, GTK_ACCESSIBLE_ROLE_CELL },
+  { GTK_ACCESSIBLE_ROLE_SECTION, GTK_ACCESSIBLE_ROLE_GROUP },
+  { GTK_ACCESSIBLE_ROLE_SECTION, GTK_ACCESSIBLE_ROLE_IMG },
+  { GTK_ACCESSIBLE_ROLE_SECTION, GTK_ACCESSIBLE_ROLE_LANDMARK },
+  { GTK_ACCESSIBLE_ROLE_SECTION, GTK_ACCESSIBLE_ROLE_LIST },
+  { GTK_ACCESSIBLE_ROLE_SECTION, GTK_ACCESSIBLE_ROLE_LIST_ITEM },
+  { GTK_ACCESSIBLE_ROLE_SECTION, GTK_ACCESSIBLE_ROLE_LOG },
+  { GTK_ACCESSIBLE_ROLE_SECTION, GTK_ACCESSIBLE_ROLE_MARQUEE },
+  { GTK_ACCESSIBLE_ROLE_SECTION, GTK_ACCESSIBLE_ROLE_MATH },
+  { GTK_ACCESSIBLE_ROLE_SECTION, GTK_ACCESSIBLE_ROLE_NOTE },
+  { GTK_ACCESSIBLE_ROLE_SECTION, GTK_ACCESSIBLE_ROLE_PARAGRAPH },
+  { GTK_ACCESSIBLE_ROLE_SECTION, GTK_ACCESSIBLE_ROLE_STATUS },
+  { GTK_ACCESSIBLE_ROLE_SECTION, GTK_ACCESSIBLE_ROLE_TABLE },
+  { GTK_ACCESSIBLE_ROLE_SECTION, GTK_ACCESSIBLE_ROLE_TAB_PANEL },
+  { GTK_ACCESSIBLE_ROLE_SECTION, GTK_ACCESSIBLE_ROLE_TIME },
+  { GTK_ACCESSIBLE_ROLE_SECTION, GTK_ACCESSIBLE_ROLE_TOOLTIP },
+  { GTK_ACCESSIBLE_ROLE_SECTION_HEAD, GTK_ACCESSIBLE_ROLE_COLUMN_HEADER },
+  { GTK_ACCESSIBLE_ROLE_SECTION_HEAD, GTK_ACCESSIBLE_ROLE_HEADING },
+  { GTK_ACCESSIBLE_ROLE_SECTION_HEAD, GTK_ACCESSIBLE_ROLE_ROW_HEADER },
+  { GTK_ACCESSIBLE_ROLE_SECTION_HEAD, GTK_ACCESSIBLE_ROLE_TAB },
+  { GTK_ACCESSIBLE_ROLE_SELECT, GTK_ACCESSIBLE_ROLE_LIST_BOX },
+  { GTK_ACCESSIBLE_ROLE_SELECT, GTK_ACCESSIBLE_ROLE_MENU },
+  { GTK_ACCESSIBLE_ROLE_SELECT, GTK_ACCESSIBLE_ROLE_RADIO_GROUP },
+  { GTK_ACCESSIBLE_ROLE_SELECT, GTK_ACCESSIBLE_ROLE_TREE },
+  { GTK_ACCESSIBLE_ROLE_STRUCTURE, GTK_ACCESSIBLE_ROLE_APPLICATION },
+  { GTK_ACCESSIBLE_ROLE_STRUCTURE, GTK_ACCESSIBLE_ROLE_DOCUMENT },
+  { GTK_ACCESSIBLE_ROLE_STRUCTURE, GTK_ACCESSIBLE_ROLE_GENERIC },
+  { GTK_ACCESSIBLE_ROLE_STRUCTURE, GTK_ACCESSIBLE_ROLE_PRESENTATION },
+  { GTK_ACCESSIBLE_ROLE_STRUCTURE, GTK_ACCESSIBLE_ROLE_RANGE },
+  { GTK_ACCESSIBLE_ROLE_STRUCTURE, GTK_ACCESSIBLE_ROLE_ROW_GROUP },
+  { GTK_ACCESSIBLE_ROLE_STRUCTURE, GTK_ACCESSIBLE_ROLE_SECTION },
+  { GTK_ACCESSIBLE_ROLE_STRUCTURE, GTK_ACCESSIBLE_ROLE_SECTION_HEAD },
+  { GTK_ACCESSIBLE_ROLE_STRUCTURE, GTK_ACCESSIBLE_ROLE_SEPARATOR },
+  { GTK_ACCESSIBLE_ROLE_WIDGET, GTK_ACCESSIBLE_ROLE_COMMAND },
+  { GTK_ACCESSIBLE_ROLE_WIDGET, GTK_ACCESSIBLE_ROLE_COMPOSITE },
+  { GTK_ACCESSIBLE_ROLE_WIDGET, GTK_ACCESSIBLE_ROLE_GRID_CELL },
+  { GTK_ACCESSIBLE_ROLE_WIDGET, GTK_ACCESSIBLE_ROLE_INPUT },
+  { GTK_ACCESSIBLE_ROLE_WIDGET, GTK_ACCESSIBLE_ROLE_PROGRESS_BAR },
+  { GTK_ACCESSIBLE_ROLE_WIDGET, GTK_ACCESSIBLE_ROLE_ROW },
+  { GTK_ACCESSIBLE_ROLE_WIDGET, GTK_ACCESSIBLE_ROLE_SCROLLBAR },
+  { GTK_ACCESSIBLE_ROLE_WIDGET, GTK_ACCESSIBLE_ROLE_SEPARATOR },
+  { GTK_ACCESSIBLE_ROLE_WIDGET, GTK_ACCESSIBLE_ROLE_TAB },
+  { GTK_ACCESSIBLE_ROLE_WINDOW, GTK_ACCESSIBLE_ROLE_DIALOG },
+  { GTK_ACCESSIBLE_ROLE_CHECKBOX, GTK_ACCESSIBLE_ROLE_SWITCH },
+  { GTK_ACCESSIBLE_ROLE_GRID_CELL, GTK_ACCESSIBLE_ROLE_COLUMN_HEADER },
+  { GTK_ACCESSIBLE_ROLE_GRID_CELL, GTK_ACCESSIBLE_ROLE_ROW_HEADER },
+  { GTK_ACCESSIBLE_ROLE_MENU_ITEM, GTK_ACCESSIBLE_ROLE_MENU_ITEM_CHECKBOX },
+  { GTK_ACCESSIBLE_ROLE_MENU_ITEM_CHECKBOX, GTK_ACCESSIBLE_ROLE_MENU_ITEM_RADIO },
+  { GTK_ACCESSIBLE_ROLE_TREE, GTK_ACCESSIBLE_ROLE_TREE_GRID },
+  { GTK_ACCESSIBLE_ROLE_CELL, GTK_ACCESSIBLE_ROLE_COLUMN_HEADER },
+  { GTK_ACCESSIBLE_ROLE_CELL, GTK_ACCESSIBLE_ROLE_GRID_CELL },
+  { GTK_ACCESSIBLE_ROLE_CELL, GTK_ACCESSIBLE_ROLE_ROW_HEADER },
+  { GTK_ACCESSIBLE_ROLE_GROUP, GTK_ACCESSIBLE_ROLE_ROW },
+  { GTK_ACCESSIBLE_ROLE_GROUP, GTK_ACCESSIBLE_ROLE_SELECT },
+  { GTK_ACCESSIBLE_ROLE_GROUP, GTK_ACCESSIBLE_ROLE_TOOLBAR },
+  { GTK_ACCESSIBLE_ROLE_LIST, GTK_ACCESSIBLE_ROLE_FEED },
+  { GTK_ACCESSIBLE_ROLE_LIST_ITEM, GTK_ACCESSIBLE_ROLE_TREE_ITEM },
+  { GTK_ACCESSIBLE_ROLE_TABLE, GTK_ACCESSIBLE_ROLE_GRID },
+  { GTK_ACCESSIBLE_ROLE_ALERT, GTK_ACCESSIBLE_ROLE_ALERT_DIALOG },
+  { GTK_ACCESSIBLE_ROLE_STATUS, GTK_ACCESSIBLE_ROLE_TIMER },
+  { GTK_ACCESSIBLE_ROLE_DIALOG, GTK_ACCESSIBLE_ROLE_ALERT_DIALOG },
+  { GTK_ACCESSIBLE_ROLE_DOCUMENT, GTK_ACCESSIBLE_ROLE_ARTICLE },
+  { GTK_ACCESSIBLE_ROLE_ARTICLE, GTK_ACCESSIBLE_ROLE_COMMENT },
+};
+
+gboolean
+gtk_accessible_role_is_subclass (GtkAccessibleRole role,
+                                 GtkAccessibleRole superclass)
+{
+  for (unsigned int i = 0; i < G_N_ELEMENTS (superclasses); i++)
+    {
+      if (superclasses[i].role == role &&
+          superclasses[i].superclass == superclass)
+        return TRUE;
+    }
+
+  return FALSE;
+}
+
 /*< private >
  * gtk_accessible_role_is_range_subclass:
  * @role: a `GtkAccessibleRole`
@@ -865,19 +1017,38 @@ gtk_accessible_role_to_name (GtkAccessibleRole  role,
 gboolean
 gtk_accessible_role_is_range_subclass (GtkAccessibleRole role)
 {
-  /* Same trick as in gtkatcontext.c */
+  return gtk_accessible_role_is_subclass (role, GTK_ACCESSIBLE_ROLE_RANGE);
+}
+
+/* < private >
+ * gtk_accessible_role_is_abstract:
+ * @role: a `GtkAccessibleRole`
+ *
+ * Checks if @role is considered abstract and should not be used
+ * for concrete widgets.
+ *
+ * Returns: whether the role is abstract
+ */
+gboolean
+gtk_accessible_role_is_abstract (GtkAccessibleRole role)
+{
   switch ((int) role)
     {
-    case GTK_ACCESSIBLE_ROLE_METER:
-    case GTK_ACCESSIBLE_ROLE_PROGRESS_BAR:
-    case GTK_ACCESSIBLE_ROLE_SCROLLBAR:
-    case GTK_ACCESSIBLE_ROLE_SLIDER:
-    case GTK_ACCESSIBLE_ROLE_SPIN_BUTTON:
+    case GTK_ACCESSIBLE_ROLE_COMMAND:
+    case GTK_ACCESSIBLE_ROLE_COMPOSITE:
+    case GTK_ACCESSIBLE_ROLE_INPUT:
+    case GTK_ACCESSIBLE_ROLE_LANDMARK:
+    case GTK_ACCESSIBLE_ROLE_RANGE:
+    case GTK_ACCESSIBLE_ROLE_SECTION:
+    case GTK_ACCESSIBLE_ROLE_SECTION_HEAD:
+    case GTK_ACCESSIBLE_ROLE_SELECT:
+    case GTK_ACCESSIBLE_ROLE_STRUCTURE:
+    case GTK_ACCESSIBLE_ROLE_WIDGET:
+    case GTK_ACCESSIBLE_ROLE_WINDOW:
       return TRUE;
     default:
-      break;
+      return FALSE;
     }
-  return FALSE;
 }
 
 /*< private >
@@ -1012,6 +1183,96 @@ gtk_accessible_get_bounds (GtkAccessible *self,
 
   return GTK_ACCESSIBLE_GET_IFACE (self)->get_bounds (self, x, y, width, height);
 }
+
+struct _GtkAccessibleList
+{
+  GList *objects;
+};
+
+/**
+ * gtk_accessible_list_new_from_list:
+ * @list: (element-type GtkAccessible): a reference to a `GList` containing a list of accessible values
+ *
+ * Allocates a new `GtkAccessibleList`, doing a shallow copy of the
+ * passed list of `GtkAccessible` instances.
+ *
+ * Returns: (transfer full): the list of accessible instances
+ *
+ * Since: 4.14
+ */
+GtkAccessibleList *
+gtk_accessible_list_new_from_list (GList *list)
+{
+  GtkAccessibleList *accessible_list = g_new (GtkAccessibleList, 1);
+
+  accessible_list->objects = g_list_copy (list);
+
+  return accessible_list;
+}
+
+/**
+ * gtk_accessible_list_new_from_array:
+ * @accessibles: (array length=n_accessibles): array of GtkAccessible
+ * @n_accessibles: length of @accessibles array
+ *
+ * Allocates a new list of accessible instances.
+ *
+ * Returns: (transfer full): the newly created list of accessible instances
+ *
+ * Since: 4.14
+ */
+GtkAccessibleList *
+gtk_accessible_list_new_from_array (GtkAccessible **accessibles,
+                                    gsize           n_accessibles)
+{
+  GtkAccessibleList *accessible_list;
+  GList *list = NULL;
+
+  g_return_val_if_fail (accessibles == NULL || n_accessibles == 0, NULL);
+
+  accessible_list = g_new (GtkAccessibleList, 1);
+
+  for (gsize i = 0; i < n_accessibles; i++)
+    {
+      list = g_list_prepend (list, accessibles[i]);
+    }
+
+  accessible_list->objects = g_list_reverse (list);
+
+  return accessible_list;
+}
+
+static void
+gtk_accessible_list_free (GtkAccessibleList *accessible_list)
+{
+  g_free (accessible_list->objects);
+  g_free (accessible_list);
+}
+
+static GtkAccessibleList *
+gtk_accessible_list_copy (GtkAccessibleList *accessible_list)
+{
+  return gtk_accessible_list_new_from_list (accessible_list->objects);
+}
+
+/**
+ * gtk_accessible_list_get_objects:
+ *
+ * Gets the list of objects this boxed type holds
+ *
+ * Returns: (transfer container) (element-type GtkAccessible): a shallow copy of the objects
+ *
+ * Since: 4.14
+ */
+GList *
+gtk_accessible_list_get_objects (GtkAccessibleList *accessible_list)
+{
+  return g_list_copy (accessible_list->objects);
+}
+
+G_DEFINE_BOXED_TYPE (GtkAccessibleList, gtk_accessible_list,
+                     gtk_accessible_list_copy,
+                     gtk_accessible_list_free)
 
 /*< private >
  * gtk_accessible_should_present:

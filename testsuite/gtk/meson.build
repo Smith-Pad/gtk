@@ -100,14 +100,16 @@ tests = [
   { 'name': 'treesorter' },
   { 'name': 'treeview' },
   { 'name': 'typename' },
-  { 'name': 'displayclose' },
   { 'name': 'revealer-size' },
   { 'name': 'widgetorder' },
   { 'name': 'widget-refcount' },
-  # This test was disabled for long enough that it no longer compiles
-  #{ 'name': 'window',
-  #  'suites': ['failing'] },
 ]
+
+if x11_enabled
+  tests += [
+    { 'name': 'displayclose' },
+  ]
+endif
 
 # Tests that test private apis and therefore are linked against libgtk-4.a
 internal_tests = [
@@ -128,6 +130,9 @@ internal_tests = [
   { 'name': 'textbuffer' },
   { 'name': 'texthistory' },
   { 'name': 'fnmatch' },
+  { 'name': 'a11y' },
+  { 'name': 'listitemmanager' },
+  { 'name': 'colorutils' },
 ]
 
 is_debug = get_option('buildtype').startswith('debug')
@@ -139,7 +144,6 @@ test_env.set('GTK_A11Y', 'test')
 test_env.set('GSK_RENDERER', 'cairo')
 test_env.set('G_TEST_SRCDIR', meson.current_source_dir())
 test_env.set('G_TEST_BUILDDIR', meson.current_build_dir())
-test_env.set('GIO_USE_VFS', 'local')
 test_env.set('GSETTINGS_BACKEND', 'memory')
 test_env.set('G_ENABLE_DIAGNOSTIC', '0')
 
@@ -150,8 +154,7 @@ endif
 
 foreach flag: common_cflags
   if flag not in ['-Werror=missing-prototypes', '-Wmissing-prototypes',
-                  '-Werror=missing-declarations', '-Wmissing-declarations',
-                  '-fvisibility=hidden']
+                  '-Werror=missing-declarations', '-Wmissing-declarations']
     test_cargs += flag
   endif
 endforeach
@@ -194,7 +197,7 @@ foreach t : internal_tests
 
   test_exe = executable(test_name,
     sources: test_srcs,
-    c_args: test_cargs + test_extra_cargs,
+    c_args: test_cargs + test_extra_cargs + ['-DGTK_COMPILATION'],
     link_args: test_extra_ldflags,
     dependencies: libgtk_static_dep,
   )
@@ -261,6 +264,7 @@ foreach test : focus_chain_tests
       join_paths(meson.current_source_dir(), 'focus-chain', test[0] + '.ui'),
       join_paths(meson.current_source_dir(), 'focus-chain', test[0] + '.' + test[1]),
     ],
+    is_parallel: false,
     env: test_env,
     suite: [ 'gtk', 'focus' ],
   )

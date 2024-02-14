@@ -910,7 +910,11 @@ search (GtkInspectorObjectTree *wt,
         {
           if (match_object (child, text))
             {
-              gtk_single_selection_set_selected (priv->selection, row);
+              gtk_column_view_scroll_to (GTK_COLUMN_VIEW (wt->priv->list),
+                                         row,
+                                         NULL,
+                                         GTK_LIST_SCROLL_SELECT | GTK_LIST_SCROLL_FOCUS,
+                                         NULL);
               g_object_unref (child);
               g_object_unref (row_item);
               return TRUE;
@@ -1302,10 +1306,26 @@ gtk_inspector_object_tree_select_object (GtkInspectorObjectTree *wt,
   if (row_item == NULL)
     return;
 
-  gtk_single_selection_set_selected (wt->priv->selection,
-                                     gtk_tree_list_row_get_position (row_item));
-  g_signal_emit (wt, signals[OBJECT_SELECTED], 0, object); // FIXME
+  gtk_column_view_scroll_to (GTK_COLUMN_VIEW (wt->priv->list),
+                             gtk_tree_list_row_get_position (row_item),
+                             NULL,
+                             GTK_LIST_SCROLL_SELECT | GTK_LIST_SCROLL_FOCUS,
+                             NULL);
+
+  g_signal_emit (wt, signals[OBJECT_SELECTED], 0, object);
   g_object_unref (row_item);
+}
+
+static void
+on_selected_item (GtkSingleSelection     *selection,
+                  GParamSpec             *pspec,
+                  GtkInspectorObjectTree *wt)
+{
+  GObject *selected = gtk_single_selection_get_selected_item (selection);
+  GtkTreeListRow *row = GTK_TREE_LIST_ROW (selected);
+  GObject *object = gtk_tree_list_row_get_item (row);
+  g_signal_emit (wt, signals[OBJECT_SELECTED], 0, object);
+  g_object_unref (object);
 }
 
 void
@@ -1321,4 +1341,5 @@ gtk_inspector_object_tree_set_display (GtkInspectorObjectTree *wt,
   wt->priv->selection = gtk_single_selection_new (g_object_ref (G_LIST_MODEL (wt->priv->tree_model)));
   gtk_column_view_set_model (GTK_COLUMN_VIEW (wt->priv->list),
                              GTK_SELECTION_MODEL (wt->priv->selection));
+  g_signal_connect (wt->priv->selection, "notify::selected-item", G_CALLBACK (on_selected_item), wt);
 }

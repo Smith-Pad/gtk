@@ -17,8 +17,7 @@
  * License along with this library. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef __GTK_SHADOW_H__
-#define __GTK_SHADOW_H__
+#pragma once
 
 #include <cairo.h>
 #include <pango/pango.h>
@@ -29,13 +28,12 @@
 #include "gtkborder.h"
 #include "gtktypes.h"
 #include "gtkcssvalueprivate.h"
-#include "gtkroundedboxprivate.h"
 #include "gtksnapshot.h"
 
 G_BEGIN_DECLS
 
 GtkCssValue *   gtk_css_shadow_value_new_none         (void);
-GtkCssValue *   gtk_css_shadow_value_new_filter       (void);
+GtkCssValue *   gtk_css_shadow_value_new_filter       (const GtkCssValue        *other);
 
 GtkCssValue *   gtk_css_shadow_value_parse            (GtkCssParser             *parser,
                                                        gboolean                  box_shadow_mode);
@@ -60,4 +58,3 @@ void            gtk_css_shadow_value_pop_snapshot     (const GtkCssValue        
 
 G_END_DECLS
 
-#endif /* __GTK_SHADOW_H__ */

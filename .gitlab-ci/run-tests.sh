@@ -1,39 +1,36 @@
 #!/bin/bash
 
-set +x
+set -x
 set +e
 
 srcdir=$( pwd )
 builddir=$1
-backend=$2
+setup=$2
+suite=$3
+multiplier=${MESON_TEST_TIMEOUT_MULTIPLIER:-1}
 
 # Ignore memory leaks lower in dependencies
-export LSAN_OPTIONS=suppressions=$srcdir/lsan.supp:print_suppressions=0:verbosity=1:log_threads=1
+export LSAN_OPTIONS=suppressions=$srcdir/lsan.supp:print_suppressions=0:detect_leaks=0:allocator_may_return_null=1
 export G_SLICE=always-malloc
 
-case "${backend}" in
-  x11)
+case "${setup}" in
+  x11*)
     xvfb-run -a -s "-screen 0 1024x768x24 -noreset" \
           meson test -C ${builddir} \
-                --timeout-multiplier "${MESON_TEST_TIMEOUT_MULTIPLIER}" \
+                --quiet \
+                --timeout-multiplier "${multiplier}" \
                 --print-errorlogs \
-                --setup=${backend} \
-                --suite=gtk \
+                --setup=${setup} \
+                --suite=${suite//,/ --suite=} \
                 --no-suite=failing \
+                --no-suite=${setup}_failing \
                 --no-suite=flaky \
+                --no-suite=headless \
                 --no-suite=gsk-compare-broadway
 
     # Store the exit code for the CI run, but always
     # generate the reports
     exit_code=$?
-
-    xvfb-run -a -s "-screen 0 1024x768x24 -noreset" \
-          meson test -C ${builddir} \
-                --timeout-multiplier "${MESON_TEST_TIMEOUT_MULTIPLIER}" \
-                --print-errorlogs \
-                --setup=${backend}_unstable \
-                --suite=flaky \
-                --suite=failing || true
     ;;
 
   wayland*)
@@ -44,26 +41,22 @@ case "${backend}" in
     export WAYLAND_DISPLAY=wayland-5
 
     meson test -C ${builddir} \
-                --timeout-multiplier "${MESON_TEST_TIMEOUT_MULTIPLIER}" \
+                --quiet \
+                --timeout-multiplier "${multiplier}" \
                 --print-errorlogs \
-                --setup=${backend} \
-                --suite=gtk \
+                --setup=${setup} \
+                --suite=${suite//,/ --suite=} \
                 --no-suite=failing \
+                --no-suite=${setup}_failing \
                 --no-suite=flaky \
+                --no-suite=headless \
                 --no-suite=gsk-compare-broadway
     exit_code=$?
-
-    meson test -C ${builddir} \
-                --timeout-multiplier "${MESON_TEST_TIMEOUT_MULTIPLIER}" \
-                --print-errorlogs \
-                --setup=${backend}_unstable \
-                --suite=flaky \
-                --suite=failing || true
 
     kill ${compositor}
     ;;
 
-  broadway)
+  broadway*)
     export XDG_RUNTIME_DIR="$(mktemp -p $(pwd) -d xdg-runtime-XXXXXX)"
 
     ${builddir}/gdk/broadway/gtk4-broadwayd :5 &
@@ -71,29 +64,22 @@ case "${backend}" in
     export BROADWAY_DISPLAY=:5
 
     meson test -C ${builddir} \
-                --timeout-multiplier "${MESON_TEST_TIMEOUT_MULTIPLIER}" \
+                --quiet \
+                --timeout-multiplier "${multiplier}" \
                 --print-errorlogs \
-                --setup=${backend} \
-                --suite=gtk \
+                --setup=${setup} \
+                --suite=${suite//,/ --suite=} \
                 --no-suite=failing \
+                --no-suite=${setup}_failing \
                 --no-suite=flaky \
+                --no-suite=headless \
                 --no-suite=gsk-compare-opengl
-
-    # don't let Broadway failures fail the run, for now
-    exit_code=0
-
-    meson test -C ${builddir} \
-                --timeout-multiplier "${MESON_TEST_TIMEOUT_MULTIPLIER}" \
-                --print-errorlogs \
-                --setup=${backend}_unstable \
-                --suite=flaky \
-                --suite=failing || true
 
     kill ${server}
     ;;
 
   *)
-    echo "Failed to add ${backend} to .gitlab-ci/run-tests.sh"
+    echo "Failed to add ${setup} to .gitlab-ci/run-tests.sh"
     exit 1
     ;;
 
@@ -101,20 +87,19 @@ esac
 
 cd ${builddir}
 
-for suffix in "" "_unstable"; do
-    $srcdir/.gitlab-ci/meson-junit-report.py \
+$srcdir/.gitlab-ci/meson-junit-report.py \
             --project-name=gtk \
-            --backend="${backend}${suffix}" \
+            --backend="${setup}" \
             --job-id="${CI_JOB_NAME}" \
-            --output="report-${backend}${suffix}.xml" \
-            "meson-logs/testlog-${backend}${suffix}.json"
-    $srcdir/.gitlab-ci/meson-html-report.py \
+            --output="report-${setup}.xml" \
+            "meson-logs/testlog-${setup}.json"
+
+$srcdir/.gitlab-ci/meson-html-report.py \
             --project-name=gtk \
-            --backend="${backend}${suffix}" \
+            --backend="${setup}" \
             --job-id="${CI_JOB_NAME}" \
-            --reftest-output-dir="testsuite/reftests/output/${backend}${suffix}" \
-            --output="report-${backend}${suffix}.html" \
-            "meson-logs/testlog-${backend}${suffix}.json"
-done
+            --reftest-output-dir="testsuite/reftests/output/${setup}" \
+            --output="report-${setup}.html" \
+            "meson-logs/testlog-${setup}.json"
 
 exit $exit_code

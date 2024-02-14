@@ -16,8 +16,7 @@
  * License along with this library. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef __GSK_RENDERER_H__
-#define __GSK_RENDERER_H__
+#pragma once
 
 #if !defined (__GSK_H_INSIDE__) && !defined (GTK_COMPILATION)
 #error "Only <gsk/gsk.h> can be included directly."
@@ -48,6 +47,10 @@ GDK_AVAILABLE_IN_ALL
 gboolean                gsk_renderer_realize                    (GskRenderer             *renderer,
                                                                  GdkSurface              *surface,
                                                                  GError                 **error);
+GDK_AVAILABLE_IN_4_14
+gboolean                gsk_renderer_realize_for_display        (GskRenderer             *renderer,
+                                                                 GdkDisplay              *display,
+                                                                 GError                 **error);
 GDK_AVAILABLE_IN_ALL
 void                    gsk_renderer_unrealize                  (GskRenderer             *renderer);
 GDK_AVAILABLE_IN_ALL
@@ -67,4 +70,3 @@ G_DEFINE_AUTOPTR_CLEANUP_FUNC(GskRenderer, g_object_unref)
 
 G_END_DECLS
 
-#endif /* __GSK_RENDERER_H__ */

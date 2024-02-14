@@ -66,22 +66,21 @@ struct _GtkFileSystemModel
   GArray *              files;          /* array of FileModelNode containing all our files */
   guint                 n_nodes_valid;  /* count of valid nodes (i.e. those whose node->row is accurate) */
   GHashTable *          file_lookup;    /* mapping of GFile => array index in model->files
-                                         * This hash table doesn't always have the same number of entries as the files array;
-                                         * The hash table gets re-populated in node_get_for_file() if this mismatch is
-                                         * detected.
+                                         * This hash table doesn't always have the same number of entries
+                                         * as the files array; it gets re-populated in node_get_for_file()
+                                         * if this mismatch is detected.
                                          */
 
   GtkFileFilter *       filter;         /* filter to use for deciding which nodes are visible */
 
   guint                 frozen;         /* number of times we're frozen */
 
-  gboolean              filter_on_thaw :1;/* set when filtering needs to happen upon thawing */
-
-  guint                 show_hidden :1; /* whether to show hidden files */
-  guint                 show_folders :1;/* whether to show folders */
-  guint                 show_files :1;  /* whether to show files */
-  guint                 filter_folders :1;/* whether filter applies to folders */
-  guint                 can_select_files : 1;
+  unsigned int          filter_on_thaw   : 1; /* set when filtering needs to happen upon thawing */
+  unsigned int          show_hidden      : 1; /* whether to show hidden files */
+  unsigned int          show_folders     : 1; /* whether to show folders */
+  unsigned int          show_files       : 1; /* whether to show files */
+  unsigned int          filter_folders   : 1; /* whether filter applies to folders */
+  unsigned int          can_select_files : 1;
 };
 
 static void freeze_updates (GtkFileSystemModel *model);
@@ -331,8 +330,6 @@ list_model_get_item (GListModel *list_model,
   GtkFileSystemModel *model = GTK_FILE_SYSTEM_MODEL (list_model);
   FileModelNode *node;
 
-  /* The first items of GtkFileSystemModel is not really a file,
-   * so ignore it. */
   if (position >= model->files->len)
     return NULL;
 
@@ -386,6 +383,7 @@ gtk_file_system_model_refilter_all (GtkFileSystemModel *model)
   for (i = 0; i < model->files->len; i++)
     node_compute_visibility_and_filters (model, i);
 
+  g_list_model_items_changed (G_LIST_MODEL (model), 0, model->files->len, model->files->len);
   model->filter_on_thaw = FALSE;
   thaw_updates (model);
 }
@@ -410,6 +408,7 @@ thaw_updates (GtkFileSystemModel *model)
   if (stuff_added)
     {
       guint i;
+      guint changed_idx = G_MAXUINT;
 
       for (i = 0; i < model->files->len; i++)
         {
@@ -417,9 +416,17 @@ thaw_updates (GtkFileSystemModel *model)
 
           if (!node->frozen_add)
             continue;
+
           node->frozen_add = FALSE;
           node_compute_visibility_and_filters (model, i);
+          if (changed_idx == G_MAXUINT)
+            changed_idx = i;
         }
+
+      if (changed_idx != G_MAXUINT)
+        g_list_model_items_changed (G_LIST_MODEL (model), changed_idx,
+                                    model->files->len - changed_idx,
+                                    model->files->len - changed_idx);
     }
 }
 
@@ -450,9 +457,10 @@ add_file (GtkFileSystemModel *model,
   position = model->files->len - 1;
 
   if (!model->frozen)
-    node_compute_visibility_and_filters (model, position);
-
-  g_list_model_items_changed (G_LIST_MODEL (model), position, 0, 1);
+    {
+      node_compute_visibility_and_filters (model, position);
+      g_list_model_items_changed (G_LIST_MODEL (model), position, 0, 1);
+    }
 }
 
 static void
@@ -502,7 +510,7 @@ remove_file (GtkFileSystemModel *model,
 
   g_array_remove_index (model->files, id);
 
-  g_list_model_items_changed (G_LIST_MODEL (model), id - 1, 1, 0);
+  g_list_model_items_changed (G_LIST_MODEL (model), id, 1, 0);
 }
 
 static void
@@ -739,7 +747,9 @@ gtk_file_system_model_monitor_change (GFileMonitor *      monitor,
       case G_FILE_MONITOR_EVENT_CREATED:
       case G_FILE_MONITOR_EVENT_CHANGED:
       case G_FILE_MONITOR_EVENT_ATTRIBUTE_CHANGED:
-        /* We can treat all of these the same way */
+        if (g_file_equal (file, model->dir))
+          return;
+        /* We can treat all children the same way */
         g_file_query_info_async (file,
                                  model->attributes,
                                  G_FILE_QUERY_INFO_NONE,

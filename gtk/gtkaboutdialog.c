@@ -133,11 +133,12 @@ static const LicenseInfo gtk_license_info [] = {
   { N_("GNU Affero General Public License, version 3 only"), "https://www.gnu.org/licenses/agpl-3.0.html" },
   { N_("BSD 3-Clause License"), "https://opensource.org/licenses/BSD-3-Clause" },
   { N_("Apache License, Version 2.0"), "https://opensource.org/licenses/Apache-2.0" },
-  { N_("Mozilla Public License 2.0"), "https://opensource.org/licenses/MPL-2.0" }
+  { N_("Mozilla Public License 2.0"), "https://opensource.org/licenses/MPL-2.0" },
+  { N_("BSD Zero-Clause License"), "https://opensource.org/license/0bsd" }
 };
 /* Keep this static assertion updated with the last element of the
  * enumeration, and make sure it matches the last element of the array */
-G_STATIC_ASSERT (G_N_ELEMENTS (gtk_license_info) - 1 == GTK_LICENSE_MPL_2_0);
+G_STATIC_ASSERT (G_N_ELEMENTS (gtk_license_info) - 1 == GTK_LICENSE_0BSD);
 
 typedef struct
 {
@@ -366,6 +367,9 @@ gtk_about_dialog_class_init (GtkAboutDialogClass *klass)
                   _gtk_boolean_handled_accumulator, NULL,
                   _gtk_marshal_BOOLEAN__STRING,
                   G_TYPE_BOOLEAN, 1, G_TYPE_STRING);
+  g_signal_set_va_marshaller (signals[ACTIVATE_LINK],
+                              G_TYPE_FROM_CLASS (object_class),
+                              _gtk_marshal_BOOLEAN__STRINGv);
 
   /**
    * GtkAboutDialog:program-name: (attributes org.gtk.Property.get=gtk_about_dialog_get_program_name org.gtk.Property.set=gtk_about_dialog_set_program_name)
@@ -563,7 +567,7 @@ gtk_about_dialog_class_init (GtkAboutDialogClass *klass)
    * A logo for the about box.
    *
    * If it is `NULL`, the default window icon set with
-   * [id@gtk_window_set_default_icon_name] will be used.
+   * [func@Gtk.Window.set_default_icon_name] will be used.
    */
   props[PROP_LOGO] =
     g_param_spec_object ("logo", NULL, NULL,

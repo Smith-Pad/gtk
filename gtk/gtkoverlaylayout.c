@@ -33,12 +33,12 @@
 /**
  * GtkOverlayLayout:
  *
- * `GtkOverlayLayout` is the layout manager used by `GtkOverlay`.
+ * `GtkOverlayLayout` is the layout manager used by [class@Gtk.Overlay].
  *
  * It places widgets as overlays on top of the main child.
  *
  * This is not a reusable layout manager, since it expects its widget
- * to be a `GtkOverlay`. It only listed here so that its layout
+ * to be a `GtkOverlay`. It is only listed here so that its layout
  * properties get documented.
  */
 
@@ -324,7 +324,8 @@ effective_align (GtkAlign         align,
       return direction == GTK_TEXT_DIR_RTL ? GTK_ALIGN_START : GTK_ALIGN_END;
     case GTK_ALIGN_FILL:
     case GTK_ALIGN_CENTER:
-    case GTK_ALIGN_BASELINE:
+    case GTK_ALIGN_BASELINE_FILL:
+    case GTK_ALIGN_BASELINE_CENTER:
     default:
       return align;
     }

@@ -135,7 +135,8 @@ gdk_toplevel_default_export_handle_finish (GdkToplevel   *toplevel,
 }
 
 static void
-gdk_toplevel_default_unexport_handle (GdkToplevel *toplevel)
+gdk_toplevel_default_unexport_handle (GdkToplevel *toplevel,
+                                      const char  *handle)
 {
 }
 
@@ -261,15 +262,16 @@ gdk_toplevel_default_init (GdkToplevelInterface *iface)
   /**
    * GdkToplevel::compute-size:
    * @toplevel: a `GdkToplevel`
-   * @size: (type Gdk.ToplevelSize) (out caller-allocates): a `GdkToplevelSize`
+   * @size: (type Gdk.ToplevelSize): a `GdkToplevelSize`
    *
    * Emitted when the size for the surface needs to be computed, when
    * it is present.
    *
-   * It will normally be emitted during or after [method@Gdk.Toplevel.present],
-   * depending on the configuration received by the windowing system.
-   * It may also be emitted at any other point in time, in response
-   * to the windowing system spontaneously changing the configuration.
+   * This signal will normally be emitted during or after a call to
+   * [method@Gdk.Toplevel.present], depending on the configuration
+   * received by the windowing system. It may also be emitted at any
+   * other point in time, in response to the windowing system
+   * spontaneously changing the configuration of the toplevel surface.
    *
    * It is the responsibility of the toplevel user to handle this signal
    * and compute the desired size of the toplevel, given the information
@@ -375,8 +377,9 @@ gdk_toplevel_lower (GdkToplevel *toplevel)
  *
  * Sets keyboard focus to @surface.
  *
- * In most cases, [method@Gtk.Window.present_with_time] should be
- * used on a [class@Gtk.Window], rather than calling this function.
+ * In most cases, [gtk_window_present_with_time()](../gtk4/method.Window.present_with_time.html)
+ * should be used on a [GtkWindow](../gtk4/class.Window.html), rather than
+ * calling this function.
  */
 void
 gdk_toplevel_focus (GdkToplevel *toplevel,
@@ -435,8 +438,8 @@ gdk_toplevel_set_title (GdkToplevel *toplevel,
  * Sets the startup notification ID.
  *
  * When using GTK, typically you should use
- * [method@Gtk.Window.set_startup_id] instead of this
- * low-level function.
+ * [gtk_window_set_startup_id()](../gtk4/method.Window.set_startup_id.html)
+ * instead of this low-level function.
  */
 void
 gdk_toplevel_set_startup_id (GdkToplevel *toplevel,
@@ -459,8 +462,8 @@ gdk_toplevel_set_startup_id (GdkToplevel *toplevel,
  * allows the window manager to do things like center @surface
  * on @parent and keep @surface above @parent.
  *
- * See [method@Gtk.Window.set_transient_for] if you’re using
- * [class@Gtk.Window] or [class@Gtk.Dialog].
+ * See [gtk_window_set_transient_for()](../gtk4/method.Window.set_transient_for.html)
+ * if you’re using [GtkWindow](../gtk4/class.Window.html).
  */
 void
 gdk_toplevel_set_transient_for (GdkToplevel *toplevel,
@@ -790,7 +793,7 @@ gdk_toplevel_export_handle (GdkToplevel         *toplevel,
  * @result: the `GAsyncResult`
  * @error: return location for an error
  *
- * Finishes the [method@Gdk.Toplevel.export_handle] cal and
+ * Finishes the [method@Gdk.Toplevel.export_handle] call and
  * returns the resulting handle.
  *
  * Returns: (nullable) (transfer full): the exported handle,
@@ -809,6 +812,7 @@ gdk_toplevel_export_handle_finish (GdkToplevel   *toplevel,
 /*< private >
  * gdk_toplevel_unexport_handle:
  * @toplevel: a `GdkToplevel`
+ * @handle: the handle to unexport
  *
  * Destroys the handle that was obtained with [method@Gdk.Toplevel.export_handle].
  *
@@ -818,7 +822,8 @@ gdk_toplevel_export_handle_finish (GdkToplevel   *toplevel,
  * Since: 4.10
  */
 void
-gdk_toplevel_unexport_handle (GdkToplevel *toplevel)
+gdk_toplevel_unexport_handle (GdkToplevel *toplevel,
+                              const char  *handle)
 {
-  GDK_TOPLEVEL_GET_IFACE (toplevel)->unexport_handle (toplevel);
+  GDK_TOPLEVEL_GET_IFACE (toplevel)->unexport_handle (toplevel, handle);
 }

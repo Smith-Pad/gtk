@@ -41,6 +41,7 @@
 
 G_DEFINE_TYPE (GskGLCommandQueue, gsk_gl_command_queue, G_TYPE_OBJECT)
 
+#if 0
 G_GNUC_UNUSED static inline void
 print_uniform (GskGLUniformFormat format,
                guint              array_count,
@@ -231,6 +232,7 @@ gsk_gl_command_queue_capture_png (GskGLCommandQueue *self,
   gdk_texture_save_to_png (texture, filename);
   g_object_unref (texture);
 }
+#endif
 
 static inline gboolean
 will_ignore_batch (GskGLCommandQueue *self)
@@ -248,9 +250,19 @@ will_ignore_batch (GskGLCommandQueue *self)
 }
 
 static inline GLint
-filter_from_index (guint index)
+min_filter_from_index (guint index)
 {
   GLint filters[3] = { GL_LINEAR, GL_NEAREST, GL_LINEAR_MIPMAP_LINEAR };
+
+  g_assert (index < GSK_GL_N_FILTERS);
+
+  return filters[index];
+}
+
+static inline GLint
+mag_filter_from_index (guint index)
+{
+  GLint filters[3] = { GL_LINEAR, GL_NEAREST, GL_LINEAR };
 
   g_assert (index < GSK_GL_N_FILTERS);
 
@@ -270,7 +282,10 @@ snapshot_attachments (const GskGLAttachmentState *state,
         {
           bind[count].id = state->textures[i].id;
           bind[count].texture = state->textures[i].texture;
-          bind[count].sampler = state->textures[i].sampler;
+          if (state->textures[i].target == GL_TEXTURE_EXTERNAL_OES)
+            bind[count].sampler = SAMPLER_EXTERNAL;
+          else
+            bind[count].sampler = state->textures[i].sampler;
           count++;
         }
     }
@@ -417,6 +432,7 @@ gsk_gl_command_queue_dispose (GObject *object)
   gsk_gl_command_batches_clear (&self->batches);
   gsk_gl_command_binds_clear (&self->batch_binds);
   gsk_gl_command_uniforms_clear (&self->batch_uniforms);
+  gsk_gl_syncs_clear (&self->syncs);
 
   gsk_gl_buffer_destroy (&self->vertices);
 
@@ -439,6 +455,7 @@ gsk_gl_command_queue_init (GskGLCommandQueue *self)
   gsk_gl_command_batches_init (&self->batches, 128);
   gsk_gl_command_binds_init (&self->batch_binds, 1024);
   gsk_gl_command_uniforms_init (&self->batch_uniforms, 2048);
+  gsk_gl_syncs_init (&self->syncs, 10);
 
   gsk_gl_buffer_init (&self->vertices, GL_ARRAY_BUFFER, sizeof (GskGLDrawVertex));
 }
@@ -481,7 +498,8 @@ gsk_gl_command_queue_new (GdkGLContext      *context,
         }
     }
 
-  self->has_samplers = gdk_gl_context_check_version (context, 3, 3, 3, 0);
+  self->has_samplers = gdk_gl_context_check_version (context, "3.3", "3.0");
+  self->can_swizzle = gdk_gl_context_check_version (context, "3.0", "3.0");
 
   /* create the samplers */
   if (self->has_samplers)
@@ -489,8 +507,8 @@ gsk_gl_command_queue_new (GdkGLContext      *context,
       glGenSamplers (G_N_ELEMENTS (self->samplers), self->samplers);
       for (i = 0; i < G_N_ELEMENTS (self->samplers); i++)
         {
-          glSamplerParameteri (self->samplers[i], GL_TEXTURE_MIN_FILTER, filter_from_index(i / GSK_GL_N_FILTERS));
-          glSamplerParameteri (self->samplers[i], GL_TEXTURE_MAG_FILTER, filter_from_index(i % GSK_GL_N_FILTERS));
+          glSamplerParameteri (self->samplers[i], GL_TEXTURE_MIN_FILTER, min_filter_from_index (i / GSK_GL_N_FILTERS));
+          glSamplerParameteri (self->samplers[i], GL_TEXTURE_MAG_FILTER, mag_filter_from_index (i % GSK_GL_N_FILTERS));
           glSamplerParameteri (self->samplers[i], GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
           glSamplerParameteri (self->samplers[i], GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         }
@@ -565,7 +583,7 @@ discard_batch (GskGLCommandQueue *self)
   self->batches.len--;
 }
 
-void
+gboolean
 gsk_gl_command_queue_begin_draw (GskGLCommandQueue   *self,
                                  GskGLUniformProgram *program,
                                  guint                width,
@@ -582,7 +600,7 @@ gsk_gl_command_queue_begin_draw (GskGLCommandQueue   *self,
    * of batches we can have in one frame.
    */
   if (will_ignore_batch (self))
-    return;
+    return FALSE;
 
   self->program_info = program;
 
@@ -592,6 +610,7 @@ gsk_gl_command_queue_begin_draw (GskGLCommandQueue   *self,
   batch->any.next_batch_index = -1;
   batch->any.viewport.width = width;
   batch->any.viewport.height = height;
+  batch->draw.blend = 1;
   batch->draw.framebuffer = 0;
   batch->draw.uniform_count = 0;
   batch->draw.uniform_offset = self->batch_uniforms.len;
@@ -603,6 +622,8 @@ gsk_gl_command_queue_begin_draw (GskGLCommandQueue   *self,
   self->fbo_max = MAX (self->fbo_max, batch->draw.framebuffer);
 
   self->in_draw = TRUE;
+
+  return TRUE;
 }
 
 void
@@ -666,6 +687,7 @@ gsk_gl_command_queue_end_draw (GskGLCommandQueue *self)
       last_batch->any.program == batch->any.program &&
       last_batch->any.viewport.width == batch->any.viewport.width &&
       last_batch->any.viewport.height == batch->any.viewport.height &&
+      last_batch->draw.blend == batch->draw.blend &&
       last_batch->draw.framebuffer == batch->draw.framebuffer &&
       last_batch->draw.vbo_offset + last_batch->draw.vbo_count == batch->draw.vbo_offset &&
       last_batch->draw.vbo_count + batch->draw.vbo_count <= 0xffff &&
@@ -707,6 +729,10 @@ gsk_gl_command_queue_split_draw (GskGLCommandQueue *self)
 
   g_assert (GSK_IS_GL_COMMAND_QUEUE (self));
   g_assert (self->batches.len > 0);
+
+  if (will_ignore_batch (self))
+    return;
+
   g_assert (self->in_draw == TRUE);
 
   program = self->program_info;
@@ -983,7 +1009,7 @@ gsk_gl_command_queue_sort_batches (GskGLCommandQueue *self)
  * gsk_gl_command_queue_execute:
  * @self: a `GskGLCommandQueue`
  * @surface_height: the height of the backing surface
- * @scale_factor: the scale factor of the backing surface
+ * @scale: the scale of the backing surface
  * @scissor: (nullable): the scissor clip if any
  * @default_framebuffer: the default framebuffer id if not zero
  *
@@ -999,7 +1025,7 @@ gsk_gl_command_queue_sort_batches (GskGLCommandQueue *self)
 void
 gsk_gl_command_queue_execute (GskGLCommandQueue    *self,
                               guint                 surface_height,
-                              guint                 scale_factor,
+                              float                 scale,
                               const cairo_region_t *scissor,
                               guint                 default_framebuffer)
 {
@@ -1010,14 +1036,14 @@ gsk_gl_command_queue_execute (GskGLCommandQueue    *self,
   guint program = 0;
   guint width = 0;
   guint height = 0;
-  G_GNUC_UNUSED guint n_binds = 0;
-  guint n_fbos = 0;
-  G_GNUC_UNUSED guint n_uniforms = 0;
-  guint n_programs = 0;
+  G_GNUC_UNUSED unsigned int n_binds = 0;
+  G_GNUC_UNUSED unsigned int n_fbos = 0;
+  G_GNUC_UNUSED unsigned int n_uniforms = 0;
+  G_GNUC_UNUSED unsigned int n_programs = 0;
   guint vao_id;
   guint vbo_id;
-  int textures[4];
-  int samplers[4];
+  int textures[GSK_GL_MAX_TEXTURES_PER_PROGRAM];
+  int samplers[GSK_GL_MAX_TEXTURES_PER_PROGRAM];
   int framebuffer = -1;
   int next_batch_index;
   int active = -1;
@@ -1037,10 +1063,8 @@ gsk_gl_command_queue_execute (GskGLCommandQueue    *self,
 
   gsk_gl_command_queue_make_current (self);
 
-#ifdef G_ENABLE_DEBUG
   gsk_gl_profiler_begin_gpu_region (self->gl_profiler);
   gsk_profiler_timer_begin (self->profiler, self->metrics.cpu_time);
-#endif
 
   glEnable (GL_DEPTH_TEST);
   glDepthFunc (GL_LEQUAL);
@@ -1050,8 +1074,11 @@ gsk_gl_command_queue_execute (GskGLCommandQueue    *self,
   glBlendFunc (GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
   glBlendEquation (GL_FUNC_ADD);
 
-  glGenVertexArrays (1, &vao_id);
-  glBindVertexArray (vao_id);
+  if (gdk_gl_context_has_vertex_arrays (self->context))
+    {
+      glGenVertexArrays (1, &vao_id);
+      glBindVertexArray (vao_id);
+    }
 
   vbo_id = gsk_gl_buffer_submit (&self->vertices);
 
@@ -1080,17 +1107,17 @@ gsk_gl_command_queue_execute (GskGLCommandQueue    *self,
                          (void *) G_STRUCT_OFFSET (GskGLDrawVertex, color2));
 
   /* Setup initial scissor clip */
-  if (scissor != NULL)
+  if (scissor != NULL && cairo_region_num_rectangles (scissor) > 0)
     {
       cairo_rectangle_int_t r;
 
       g_assert (cairo_region_num_rectangles (scissor) == 1);
       cairo_region_get_rectangle (scissor, 0, &r);
 
-      scissor_test.origin.x = r.x * scale_factor;
-      scissor_test.origin.y = surface_height - (r.height * scale_factor) - (r.y * scale_factor);
-      scissor_test.size.width = r.width * scale_factor;
-      scissor_test.size.height = r.height * scale_factor;
+      scissor_test.origin.x = (int) floor (r.x * scale);
+      scissor_test.origin.y = (int) floor (surface_height - (r.height * scale) - (r.y * scale));
+      scissor_test.size.width = (int) ceil (r.width * scale);
+      scissor_test.size.height = (int) ceil (r.height * scale);
     }
 
   next_batch_index = self->head_batch_index;
@@ -1147,22 +1174,43 @@ gsk_gl_command_queue_execute (GskGLCommandQueue    *self,
             {
               const GskGLCommandBind *bind = &self->batch_binds.items[batch->draw.bind_offset];
 
+              g_assert (bind->texture < G_N_ELEMENTS (textures));
               for (guint i = 0; i < batch->draw.bind_count; i++)
                 {
                   if (textures[bind->texture] != bind->id)
                     {
+                      GskGLSync *s;
+
                       if (active != bind->texture)
                         {
                           active = bind->texture;
                           glActiveTexture (GL_TEXTURE0 + bind->texture);
                         }
 
-                      glBindTexture (GL_TEXTURE_2D, bind->id);
+                      s = gsk_gl_syncs_get_sync (&self->syncs, bind->id);
+                      if (s && s->sync)
+                        {
+                          glWaitSync ((GLsync) s->sync, 0, GL_TIMEOUT_IGNORED);
+                          s->sync = NULL;
+                        }
+
+                      if (bind->sampler == SAMPLER_EXTERNAL)
+                        glBindTexture (GL_TEXTURE_EXTERNAL_OES, bind->id);
+                      else
+                        glBindTexture (GL_TEXTURE_2D, bind->id);
                       textures[bind->texture] = bind->id;
                       if (!self->has_samplers)
                         {
-                          glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter_from_index(bind->sampler / GSK_GL_N_FILTERS));
-                          glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter_from_index(bind->sampler % GSK_GL_N_FILTERS));
+                          if (bind->sampler == SAMPLER_EXTERNAL)
+                            {
+                              glTexParameteri (GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+                              glTexParameteri (GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                            }
+                          else
+                            {
+                              glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, min_filter_from_index (bind->sampler / GSK_GL_N_FILTERS));
+                              glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, mag_filter_from_index (bind->sampler % GSK_GL_N_FILTERS));
+                            }
                         }
                     }
 
@@ -1172,8 +1220,16 @@ gsk_gl_command_queue_execute (GskGLCommandQueue    *self,
                         glBindSampler (bind->texture, self->samplers[bind->sampler]);
                       else
                         {
-                          glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter_from_index(bind->sampler / GSK_GL_N_FILTERS));
-                          glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter_from_index(bind->sampler % GSK_GL_N_FILTERS));
+                          if (bind->sampler == SAMPLER_EXTERNAL)
+                            {
+                              glTexParameteri (GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+                              glTexParameteri (GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                            }
+                          else
+                            {
+                              glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, min_filter_from_index (bind->sampler / GSK_GL_N_FILTERS));
+                              glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, mag_filter_from_index (bind->sampler % GSK_GL_N_FILTERS));
+                            }
                         }
                       samplers[bind->texture] = bind->sampler;
                     }
@@ -1194,8 +1250,13 @@ gsk_gl_command_queue_execute (GskGLCommandQueue    *self,
               n_uniforms += batch->draw.uniform_count;
             }
 
+          if (batch->draw.blend == 0)
+            glDisable (GL_BLEND);
+
           glDrawArrays (GL_TRIANGLES, batch->draw.vbo_offset, batch->draw.vbo_count);
 
+          if (batch->draw.blend == 0)
+            glEnable (GL_BLEND);
         break;
 
         default:
@@ -1224,7 +1285,8 @@ gsk_gl_command_queue_execute (GskGLCommandQueue    *self,
     }
 
   glDeleteBuffers (1, &vbo_id);
-  glDeleteVertexArrays (1, &vao_id);
+  if (gdk_gl_context_has_vertex_arrays (self->context))
+    glDeleteVertexArrays (1, &vao_id);
 
   gdk_profiler_set_int_counter (self->metrics.n_binds, n_binds);
   gdk_profiler_set_int_counter (self->metrics.n_uniforms, n_uniforms);
@@ -1233,7 +1295,6 @@ gsk_gl_command_queue_execute (GskGLCommandQueue    *self,
   gdk_profiler_set_int_counter (self->metrics.n_uploads, self->n_uploads);
   gdk_profiler_set_int_counter (self->metrics.queue_depth, self->batches.len);
 
-#ifdef G_ENABLE_DEBUG
   {
     gint64 start_time G_GNUC_UNUSED = gsk_profiler_timer_get_start (self->profiler, self->metrics.cpu_time);
     gint64 cpu_time = gsk_profiler_timer_end (self->profiler, self->metrics.cpu_time);
@@ -1245,7 +1306,6 @@ gsk_gl_command_queue_execute (GskGLCommandQueue    *self,
 
     gsk_profiler_push_samples (self->profiler);
   }
-#endif
 }
 
 void
@@ -1290,7 +1350,7 @@ gsk_gl_command_queue_end_frame (GskGLCommandQueue *self)
       if (self->attachments->textures[i].id != 0)
         {
           glActiveTexture (GL_TEXTURE0 + i);
-          glBindTexture (GL_TEXTURE_2D, 0);
+          glBindTexture (self->attachments->textures[i].target, 0);
 
           self->attachments->textures[i].id = 0;
           self->attachments->textures[i].changed = FALSE;
@@ -1301,6 +1361,7 @@ gsk_gl_command_queue_end_frame (GskGLCommandQueue *self)
   self->batches.len = 0;
   self->batch_binds.len = 0;
   self->batch_uniforms.len = 0;
+  self->syncs.len = 0;
   self->n_uploads = 0;
   self->tail_batch_index = -1;
   self->in_frame = FALSE;
@@ -1366,7 +1427,7 @@ gsk_gl_command_queue_create_texture (GskGLCommandQueue *self,
 
   glActiveTexture (GL_TEXTURE0);
   glBindTexture (GL_TEXTURE_2D, texture_id);
- 
+
   glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
   glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
   glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -1374,6 +1435,8 @@ gsk_gl_command_queue_create_texture (GskGLCommandQueue *self,
 
   switch (format)
   {
+    case 0:
+      break;
     case GL_RGBA8:
       glTexImage2D (GL_TEXTURE_2D, 0, format, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
       break;
@@ -1394,8 +1457,9 @@ gsk_gl_command_queue_create_texture (GskGLCommandQueue *self,
   }
 
   /* Restore the previous texture if it was set */
-  if (self->attachments->textures[0].id != 0)
-    glBindTexture (GL_TEXTURE_2D, self->attachments->textures[0].id);
+  if (self->attachments->textures[0].id != 0 &&
+      self->attachments->textures[0].target == GL_TEXTURE_2D)
+    glBindTexture (self->attachments->textures[0].target, self->attachments->textures[0].id);
 
   return (int)texture_id;
 }
@@ -1412,47 +1476,127 @@ gsk_gl_command_queue_create_framebuffer (GskGLCommandQueue *self)
   return fbo_id;
 }
 
-static void
-gsk_gl_command_queue_do_upload_texture (GskGLCommandQueue *self,
-                                        GdkTexture        *texture)
+static GdkMemoryFormat
+memory_format_gl_format (GskGLCommandQueue *self,
+                         GdkMemoryFormat    data_format,
+                         gboolean           ensure_mipmap,
+                         gboolean          *out_can_mipmap,
+                         GLint             *gl_internalformat,
+                         GLenum            *gl_format,
+                         GLenum            *gl_type,
+                         GLint              gl_swizzle[4])
 {
-  GdkGLContext *context;
+  GdkGLMemoryFlags flags, required_flags;
+  GdkMemoryFormat alt_format;
+  const GdkMemoryFormat *fallbacks;
+  gsize i;
+
+  /* No support for straight formats yet */
+  if (gdk_memory_format_alpha (data_format) == GDK_MEMORY_ALPHA_STRAIGHT)
+    data_format = gdk_memory_format_get_premultiplied (data_format);
+
+  required_flags = GDK_GL_FORMAT_USABLE | GDK_GL_FORMAT_FILTERABLE;
+  if (ensure_mipmap)
+    required_flags |= GDK_GL_FORMAT_RENDERABLE;
+
+  /* First, try the format itself */
+  flags = gdk_gl_context_get_format_flags (self->context, data_format);
+  if ((flags & required_flags) == required_flags)
+    {
+      gdk_memory_format_gl_format (data_format,
+                                   gdk_gl_context_get_use_es (self->context),
+                                   gl_internalformat,
+                                   gl_format,
+                                   gl_type,
+                                   gl_swizzle);
+      *out_can_mipmap = (flags & GDK_GL_FORMAT_RENDERABLE) ? TRUE : FALSE;
+      return data_format;
+    }
+
+  /* Second, try the potential RGBA format */
+  if (gdk_memory_format_gl_rgba_format (data_format,
+                                        gdk_gl_context_get_use_es (self->context),
+                                        &alt_format,
+                                        gl_internalformat,
+                                        gl_format,
+                                        gl_type,
+                                        gl_swizzle))
+    {
+      flags = gdk_gl_context_get_format_flags (self->context, alt_format);
+      if ((flags & required_flags) == required_flags)
+        {
+          *out_can_mipmap = (flags & GDK_GL_FORMAT_RENDERABLE) ? TRUE : FALSE;
+
+          if (self->can_swizzle)
+            return data_format;
+
+          gdk_memory_format_gl_format (alt_format,
+                                       gdk_gl_context_get_use_es (self->context),
+                                       gl_internalformat,
+                                       gl_format,
+                                       gl_type,
+                                       gl_swizzle);
+
+          return alt_format;
+        }
+    }
+
+  /* Next, try the fallbacks */
+  fallbacks = gdk_memory_format_get_fallbacks (data_format);
+  for (i = 0; fallbacks[i] != -1; i++)
+    {
+      flags = gdk_gl_context_get_format_flags (self->context, fallbacks[i]);
+      if (((flags & required_flags) == required_flags))
+        {
+          gdk_memory_format_gl_format (fallbacks[i],
+                                       gdk_gl_context_get_use_es (self->context),
+                                       gl_internalformat,
+                                       gl_format,
+                                       gl_type,
+                                       gl_swizzle);
+
+          *out_can_mipmap = (flags & GDK_GL_FORMAT_RENDERABLE) ? TRUE : FALSE;
+          return fallbacks[i];
+        }
+    }
+
+  g_assert_not_reached ();
+
+  return GDK_MEMORY_R8G8B8A8_PREMULTIPLIED;
+}
+
+static void
+gsk_gl_command_queue_do_upload_texture_chunk (GskGLCommandQueue *self,
+                                              GdkTexture        *texture,
+                                              int                x,
+                                              int                y,
+                                              GdkMemoryFormat    data_format,
+                                              GLenum             gl_format,
+                                              GLenum             gl_type,
+                                              GLint              gl_swizzle[4])
+
+{
+  G_GNUC_UNUSED gint64 start_time = GDK_PROFILER_CURRENT_TIME;
   const guchar *data;
   gsize stride;
   GBytes *bytes;
   GdkTextureDownloader downloader;
-  GdkMemoryFormat data_format;
   int width, height;
-  GLenum gl_internalformat;
-  GLenum gl_format;
-  GLenum gl_type;
   gsize bpp;
-  gboolean use_es;
 
-  context = gdk_gl_context_get_current ();
-  use_es = gdk_gl_context_get_use_es (context);
-  data_format = gdk_texture_get_format (texture);
   width = gdk_texture_get_width (texture);
   height = gdk_texture_get_height (texture);
 
-  if (!gdk_memory_format_gl_format (data_format,
-                                    use_es,
-                                    &gl_internalformat,
-                                    &gl_format,
-                                    &gl_type))
+  if (GSK_DEBUG_CHECK (FALLBACK) &&
+      data_format != gdk_texture_get_format (texture))
     {
-      if (gdk_memory_format_prefers_high_depth (data_format))
-        data_format = GDK_MEMORY_R32G32B32A32_FLOAT_PREMULTIPLIED;
-      else
-        data_format = GDK_MEMORY_R8G8B8A8_PREMULTIPLIED;
-      if (!gdk_memory_format_gl_format (data_format,
-                                        use_es,
-                                        &gl_internalformat,
-                                        &gl_format,
-                                        &gl_type))
-        {
-          g_assert_not_reached ();
-        }
+      GEnumClass *enum_class = g_type_class_ref (GDK_TYPE_MEMORY_FORMAT);
+
+      gdk_debug_message ("Unsupported format %s, converting on CPU to %s",
+                         g_enum_get_value (enum_class, gdk_texture_get_format (texture))->value_nick,
+                         g_enum_get_value (enum_class, data_format)->value_nick);
+
+      g_type_class_unref (enum_class);
     }
 
   gdk_texture_downloader_init (&downloader, texture);
@@ -1462,6 +1606,14 @@ gsk_gl_command_queue_do_upload_texture (GskGLCommandQueue *self,
   data = g_bytes_get_data (bytes, NULL);
   bpp = gdk_memory_format_bytes_per_pixel (data_format);
 
+  if (gdk_profiler_is_running ())
+    {
+      gdk_profiler_end_markf (start_time,
+                              "Download texture chunk",
+                              "Tile %dx%d Size %dx%d", x, y, width, height);
+      start_time = GDK_PROFILER_CURRENT_TIME;
+    }
+
   glPixelStorei (GL_UNPACK_ALIGNMENT, gdk_memory_format_alignment (data_format));
 
   /* GL_UNPACK_ROW_LENGTH is available on desktop GL, OpenGL ES >= 3.0, or if
@@ -1469,43 +1621,71 @@ gsk_gl_command_queue_do_upload_texture (GskGLCommandQueue *self,
    */
   if (stride == width * bpp)
     {
-      glTexImage2D (GL_TEXTURE_2D, 0, gl_internalformat, width, height, 0, gl_format, gl_type, data);
+      glTexSubImage2D (GL_TEXTURE_2D, 0, x, y, width, height, gl_format, gl_type, data);
     }
-  else if (stride % bpp == 0 &&
-           (gdk_gl_context_check_version (context, 0, 0, 3, 0) || gdk_gl_context_has_unpack_subimage (context)))
+  else if (stride % bpp == 0 && gdk_gl_context_has_unpack_subimage (self->context))
     {
       glPixelStorei (GL_UNPACK_ROW_LENGTH, stride / bpp);
 
-      glTexImage2D (GL_TEXTURE_2D, 0, gl_internalformat, width, height, 0, gl_format, gl_type, data);
+      glTexSubImage2D (GL_TEXTURE_2D, 0, x, y, width, height, gl_format, gl_type, data);
 
       glPixelStorei (GL_UNPACK_ROW_LENGTH, 0);
     }
   else
     {
-      int i;
-      glTexImage2D (GL_TEXTURE_2D, 0, gl_internalformat, width, height, 0, gl_format, gl_type, NULL);
-      for (i = 0; i < height; i++)
-        glTexSubImage2D (GL_TEXTURE_2D, 0, 0, i, width, 1, gl_format, gl_type, data + (i * stride));
+      for (int i = 0; i < height; i++)
+        glTexSubImage2D (GL_TEXTURE_2D, 0, x, y + i, width, 1, gl_format, gl_type, data + (i * stride));
     }
+
   glPixelStorei (GL_UNPACK_ALIGNMENT, 4);
 
+  /* Only apply swizzle if really needed, might not even be
+   * supported if default values are set
+   */
+  if (gl_swizzle[0] != GL_RED || gl_swizzle[1] != GL_GREEN || gl_swizzle[2] != GL_BLUE || gl_swizzle[3] != GL_ALPHA)
+    {
+      /* Set each channel independently since GLES 3.0 doesn't support the iv method */
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_R, gl_swizzle[0]);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_G, gl_swizzle[1]);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_B, gl_swizzle[2]);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_A, gl_swizzle[3]);
+    }
+
   g_bytes_unref (bytes);
+
+  if (gdk_profiler_is_running ())
+    gdk_profiler_end_markf (start_time,
+                            "Upload texture chunk",
+                            "Tile %dx%d Size %dx%d", x, y, width, height);
 }
 
 int
-gsk_gl_command_queue_upload_texture (GskGLCommandQueue *self,
-                                     GdkTexture        *texture)
+gsk_gl_command_queue_upload_texture_chunks (GskGLCommandQueue    *self,
+                                            gboolean              ensure_mipmap,
+                                            unsigned int          n_chunks,
+                                            GskGLTextureChunk    *chunks,
+                                            gboolean             *out_can_mipmap)
 {
   G_GNUC_UNUSED gint64 start_time = GDK_PROFILER_CURRENT_TIME;
-  cairo_surface_t *surface = NULL;
   int width, height;
+  GdkMemoryFormat data_format;
+  GLint gl_internalformat;
+  GLenum gl_format;
+  GLenum gl_type;
+  GLint gl_swizzle[4];
   int texture_id;
 
   g_assert (GSK_IS_GL_COMMAND_QUEUE (self));
-  g_assert (!GDK_IS_GL_TEXTURE (texture));
 
-  width = gdk_texture_get_width (texture);
-  height = gdk_texture_get_height (texture);
+  width = height = 0;
+  for (unsigned int i = 0; i < n_chunks; i++)
+    {
+      GskGLTextureChunk *c = &chunks[i];
+
+      width = MAX (width, c->x + gdk_texture_get_width (c->texture));
+      height = MAX (height, c->y + gdk_texture_get_height (c->texture));
+    }
+
   if (width > self->max_texture_size || height > self->max_texture_size)
     {
       g_warning ("Attempt to create texture of size %ux%u but max size is %d. "
@@ -1514,7 +1694,8 @@ gsk_gl_command_queue_upload_texture (GskGLCommandQueue *self,
       width = MIN (width, self->max_texture_size);
       height = MIN (height, self->max_texture_size);
     }
-  texture_id = gsk_gl_command_queue_create_texture (self, width, height, GL_RGBA8);
+
+  texture_id = gsk_gl_command_queue_create_texture (self, width, height, 0);
   if (texture_id == -1)
     return texture_id;
 
@@ -1524,14 +1705,29 @@ gsk_gl_command_queue_upload_texture (GskGLCommandQueue *self,
   glActiveTexture (GL_TEXTURE0);
   glBindTexture (GL_TEXTURE_2D, texture_id);
 
-  gsk_gl_command_queue_do_upload_texture (self, texture);
+  /* Initialize the texture */
+  data_format = gdk_texture_get_format (chunks[0].texture);
+  data_format = memory_format_gl_format (self,
+                                         data_format,
+                                         ensure_mipmap,
+                                         out_can_mipmap,
+                                         &gl_internalformat,
+                                         &gl_format,
+                                         &gl_type,
+                                         gl_swizzle);
+
+  glTexImage2D (GL_TEXTURE_2D, 0, gl_internalformat, width, height, 0, gl_format, gl_type, NULL);
+
+  for (unsigned int i = 0; i < n_chunks; i++)
+    {
+      GskGLTextureChunk *c = &chunks[i];
+      gsk_gl_command_queue_do_upload_texture_chunk (self, c->texture, c->x, c->y, data_format, gl_format, gl_type, gl_swizzle);
+    }
 
   /* Restore previous texture state if any */
   if (self->attachments->textures[0].id > 0)
     glBindTexture (self->attachments->textures[0].target,
                    self->attachments->textures[0].id);
-
-  g_clear_pointer (&surface, cairo_surface_destroy);
 
   if (gdk_profiler_is_running ())
     gdk_profiler_add_markf (start_time, GDK_PROFILER_CURRENT_TIME-start_time,
@@ -1541,11 +1737,23 @@ gsk_gl_command_queue_upload_texture (GskGLCommandQueue *self,
   return texture_id;
 }
 
+int
+gsk_gl_command_queue_upload_texture (GskGLCommandQueue *self,
+                                     GdkTexture        *texture,
+                                     gboolean           ensure_mipmap,
+                                     gboolean          *out_can_mipmap)
+{
+  return gsk_gl_command_queue_upload_texture_chunks (self,
+                                                     ensure_mipmap,
+                                                     1,
+                                                     &(GskGLTextureChunk){ texture, 0, 0},
+                                                     out_can_mipmap);
+}
+
 void
 gsk_gl_command_queue_set_profiler (GskGLCommandQueue *self,
                                    GskProfiler       *profiler)
 {
-#ifdef G_ENABLE_DEBUG
   g_assert (GSK_IS_GL_COMMAND_QUEUE (self));
   g_assert (GSK_IS_PROFILER (profiler));
 
@@ -1564,5 +1772,4 @@ gsk_gl_command_queue_set_profiler (GskGLCommandQueue *self,
       self->metrics.n_programs = gdk_profiler_define_int_counter ("programs", "Number of program changes");
       self->metrics.queue_depth = gdk_profiler_define_int_counter ("gl-queue-depth", "Depth of GL command batches");
     }
-#endif
 }

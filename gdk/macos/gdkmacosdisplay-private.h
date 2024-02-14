@@ -17,8 +17,7 @@
  * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
-#ifndef __GDK_MACOS_DISPLAY_PRIVATE_H__
-#define __GDK_MACOS_DISPLAY_PRIVATE_H__
+#pragma once
 
 #include <AppKit/AppKit.h>
 
@@ -91,7 +90,7 @@ struct _GdkMacosDisplay
   /* Note if we have a key window that is not a GdkMacosWindow
    * such as a NSPanel used for native dialogs.
    */
-  guint key_window_is_foregin : 1;
+  guint key_window_is_foreign : 1;
 };
 
 struct _GdkMacosDisplayClass
@@ -122,6 +121,8 @@ GdkMonitor      *_gdk_macos_display_get_monitor_at_coords          (GdkMacosDisp
 GdkMonitor      *_gdk_macos_display_get_monitor_at_display_coords  (GdkMacosDisplay *self,
                                                                     int              x,
                                                                     int              y);
+void             _gdk_macos_display_surface_added                  (GdkMacosDisplay *self,
+                                                                    GdkMacosSurface *surface);
 GdkEvent        *_gdk_macos_display_translate                      (GdkMacosDisplay *self,
                                                                     NSEvent         *event);
 void             _gdk_macos_display_feedback_init                  (GdkMacosDisplay *self);
@@ -179,4 +180,3 @@ void             _gdk_macos_display_position_surface               (GdkMacosDisp
 
 G_END_DECLS
 
-#endif /* __GDK_MACOS_DISPLAY_PRIVATE_H__ */

@@ -182,6 +182,10 @@ test_type (gconstpointer data)
 	  strcmp (pspec->name, "storable-formats") == 0)
 	check = FALSE;
 
+      if (g_type_is_a (type, GDK_TYPE_DMABUF_TEXTURE_BUILDER) &&
+	  strcmp (pspec->name, "display") == 0)
+	check = FALSE;
+
       /* set in the constructor */
       if (g_type_is_a (type, GSK_TYPE_GL_SHADER) &&
 	  strcmp (pspec->name, "source") == 0)
@@ -215,6 +219,10 @@ test_type (gconstpointer data)
 
       if (g_type_is_a (type, GDK_TYPE_DISPLAY_MANAGER) &&
 	  (strcmp (pspec->name, "default-display") == 0))
+	check = FALSE;
+
+      if (g_type_is_a (type, GDK_TYPE_DISPLAY) &&
+	  (strcmp (pspec->name, "dmabuf-formats") == 0))
 	check = FALSE;
 
       if (g_type_is_a (type, GDK_TYPE_MONITOR) &&
@@ -510,7 +518,6 @@ main (int argc, char **argv)
   const char *display, *x_r_d;
 
   /* These must be set before gtk_test_init */
-  g_setenv ("GIO_USE_VFS", "local", TRUE);
   g_setenv ("GSETTINGS_BACKEND", "memory", TRUE);
   g_setenv ("G_ENABLE_DIAGNOSTIC", "0", TRUE);
 

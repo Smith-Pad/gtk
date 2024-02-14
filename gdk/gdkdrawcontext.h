@@ -18,14 +18,12 @@
  * License along with this library. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef __GDK_DRAW_CONTEXT__
-#define __GDK_DRAW_CONTEXT__
+#pragma once
 
 #if !defined (__GDK_H_INSIDE__) && !defined (GTK_COMPILATION)
 #error "Only <gdk/gdk.h> can be included directly."
 #endif
 
-#include <gdk/gdkversionmacros.h>
 #include <gdk/gdktypes.h>
 
 G_BEGIN_DECLS
@@ -47,6 +45,7 @@ void                    gdk_draw_context_begin_frame            (GdkDrawContext 
                                                                  const cairo_region_t   *region);
 GDK_AVAILABLE_IN_ALL
 void                    gdk_draw_context_end_frame              (GdkDrawContext         *context);
+
 GDK_AVAILABLE_IN_ALL
 gboolean                gdk_draw_context_is_in_frame            (GdkDrawContext         *context);
 GDK_AVAILABLE_IN_ALL
@@ -56,4 +55,3 @@ G_DEFINE_AUTOPTR_CLEANUP_FUNC(GdkDrawContext, g_object_unref)
 
 G_END_DECLS
 
-#endif /* __GDK_DRAW_CONTEXT__ */

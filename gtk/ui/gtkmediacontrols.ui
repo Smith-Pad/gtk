@@ -25,6 +25,7 @@
             <property name="valign">3</property>
             <property name="has-frame">0</property>
             <property name="icon-name">media-playback-start-symbolic</property>
+            <property name="tooltip-text" context="media controls tooltip" translatable="yes">Play</property>
             <signal name="clicked" handler="play_button_clicked" object="GtkMediaControls" swapped="no"/>
           </object>
         </child>
@@ -42,6 +43,9 @@
                 <property name="adjustment">time_adjustment</property>
                 <property name="restrict-to-fill-level">0</property>
                 <property name="hexpand">1</property>
+                <accessibility>
+                  <property name="label" translatable="yes" context="media controls">Position</property>
+                </accessibility>
               </object>
             </child>
             <child>
@@ -56,6 +60,10 @@
         <child>
           <object class="GtkVolumeButton" id="volume_button">
             <property name="adjustment">volume_adjustment</property>
+            <property name="valign">center</property>
+            <accessibility>
+              <property name="label" translatable="yes" context="media controls">Volume</property>
+            </accessibility>
           </object>
         </child>
       </object>

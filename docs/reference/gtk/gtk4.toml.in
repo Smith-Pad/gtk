@@ -68,6 +68,7 @@ content_files = [
   "input-handling.md",
   "drag-and-drop.md",
   "drawing-model.md",
+  "coordinates.md",
   "css-overview.md",
   "css-properties.md",
   "section-accessibility.md",
@@ -84,6 +85,8 @@ content_files = [
   "visual_index.md",
 ]
 content_images = [
+  "../images/favicon.svg",
+  "../images/favicon-192x192.png",
   "images/aboutdialog.png",
   "images/action-bar.png",
   "images/appchooserbutton.png",
@@ -241,5 +244,8 @@ content_images = [
   "images/rich-list.png",
   "images/data-table.png",
   "images/navigation-sidebar.png",
+  "images/box-model-light.png",
+  "images/box-model-dark.png",
 ]
+content_base_url = "https://gitlab.gnome.org/GNOME/gtk/-/blob/main/docs/reference/gtk/"
 urlmap_file = "urlmap.js"

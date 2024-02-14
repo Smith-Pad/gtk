@@ -1,8 +1,9 @@
 /* Pickers and Launchers
- * #Keywords: GtkColorDialog, GtkFontDialog, GtkFileDialog, GtkFileLauncher, GtkUriLauncher
+ * #Keywords: GtkColorDialog, GtkFontDialog, GtkFileDialog, GtkPrintDialog, GtkFileLauncher, GtkUriLauncher
  *
  * The dialogs are mainly intended for use in preference dialogs.
- * They allow to select colors, fonts and applications.
+ * They allow to select colors, fonts and files. There is also a
+ * print dialog.
  *
  * The launchers let you open files or URIs in applications that
  * can handle them.
@@ -11,11 +12,13 @@
 #include <gtk/gtk.h>
 
 static GtkWidget *app_picker;
+static GtkWidget *print_button;
 
 static void
 set_file (GFile    *file,
           gpointer  data)
 {
+  GFileInfo *info;
   char *name;
 
   if (!file)
@@ -31,6 +34,13 @@ set_file (GFile    *file,
 
   gtk_widget_set_sensitive (app_picker, TRUE);
   g_object_set_data_full (G_OBJECT (app_picker), "file", g_object_ref (file), g_object_unref);
+
+  info = g_file_query_info (file, "standard::content-type", 0, NULL, NULL);
+  if (strcmp (g_file_info_get_content_type (info), "application/pdf") == 0)
+    {
+      gtk_widget_set_sensitive (print_button, TRUE);
+      g_object_set_data_full (G_OBJECT (print_button), "file", g_object_ref (file), g_object_unref);
+    }
 }
 
 static void
@@ -47,6 +57,10 @@ file_opened (GObject *source,
     {
       g_print ("%s\n", error->message);
       g_error_free (error);
+      gtk_widget_set_sensitive (app_picker, FALSE);
+      g_object_set_data (G_OBJECT (app_picker), "file", NULL);
+      gtk_widget_set_sensitive (print_button, FALSE);
+      g_object_set_data (G_OBJECT (print_button), "file", NULL);
     }
 
   set_file (file, data);
@@ -112,6 +126,53 @@ open_app (GtkButton *picker)
   gtk_file_launcher_launch (launcher, parent, NULL, open_app_done, NULL);
 
   g_object_unref (launcher);
+}
+
+static void
+print_file_done (GObject      *source,
+                 GAsyncResult *result,
+                 gpointer      data)
+{
+  GtkPrintDialog *dialog = GTK_PRINT_DIALOG (source);
+  GError *error = NULL;
+  GCancellable *cancellable;
+  unsigned int id;
+
+  cancellable = g_task_get_cancellable (G_TASK (result));
+  id = GPOINTER_TO_UINT (g_object_get_data (G_OBJECT (cancellable), "timeout"));
+  if (id)
+    g_source_remove (id);
+
+  if (!gtk_print_dialog_print_file_finish (dialog, result, &error))
+    {
+      g_print ("%s\n", error->message);
+      g_error_free (error);
+    }
+}
+
+static void
+print_file (GtkButton *picker)
+{
+  GtkWindow *parent = GTK_WINDOW (gtk_widget_get_root (GTK_WIDGET (picker)));
+  GtkPrintDialog *dialog;
+  GCancellable *cancellable;
+  GFile *file;
+  unsigned int id;
+
+  file = G_FILE (g_object_get_data (G_OBJECT (picker), "file"));
+  dialog = gtk_print_dialog_new ();
+
+  cancellable = g_cancellable_new ();
+
+  id = g_timeout_add_seconds_full (G_PRIORITY_DEFAULT,
+                                   20,
+                                   abort_mission, g_object_ref (cancellable), g_object_unref);
+  g_object_set_data (G_OBJECT (cancellable), "timeout", GUINT_TO_POINTER (id));
+
+  gtk_print_dialog_print_file (dialog, parent, NULL, file, cancellable, print_file_done, NULL);
+
+  g_object_unref (cancellable);
+  g_object_unref (dialog);
 }
 
 static void
@@ -189,6 +250,7 @@ do_pickers (GtkWidget *do_widget)
     gtk_grid_attach (GTK_GRID (table), label, 0, 0, 1, 1);
 
     picker = gtk_color_dialog_button_new (gtk_color_dialog_new ());
+    gtk_label_set_mnemonic_widget (GTK_LABEL (label), picker);
     gtk_grid_attach (GTK_GRID (table), picker, 1, 0, 1, 1);
 
     label = gtk_label_new ("Font:");
@@ -198,6 +260,7 @@ do_pickers (GtkWidget *do_widget)
     gtk_grid_attach (GTK_GRID (table), label, 0, 1, 1, 1);
 
     picker = gtk_font_dialog_button_new (gtk_font_dialog_new ());
+    gtk_label_set_mnemonic_widget (GTK_LABEL (label), picker);
     gtk_grid_attach (GTK_GRID (table), picker, 1, 1, 1, 1);
 
     label = gtk_label_new ("File:");
@@ -208,6 +271,9 @@ do_pickers (GtkWidget *do_widget)
 
     picker = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 6);
     button = gtk_button_new_from_icon_name ("document-open-symbolic");
+    gtk_accessible_update_property (GTK_ACCESSIBLE (button),
+                                    GTK_ACCESSIBLE_PROPERTY_LABEL, "Select File",
+                                    -1);
 
     label = gtk_label_new ("None");
 
@@ -223,11 +289,20 @@ do_pickers (GtkWidget *do_widget)
     gtk_box_append (GTK_BOX (picker), button);
     app_picker = gtk_button_new_from_icon_name ("emblem-system-symbolic");
     gtk_widget_set_halign (app_picker, GTK_ALIGN_END);
+    gtk_accessible_update_property (GTK_ACCESSIBLE (app_picker),
+                                    GTK_ACCESSIBLE_PROPERTY_LABEL, "Open File",
+                                    -1);
     gtk_widget_set_sensitive (app_picker, FALSE);
     g_signal_connect (app_picker, "clicked", G_CALLBACK (open_app), NULL);
     gtk_box_append (GTK_BOX (picker), app_picker);
-    gtk_grid_attach (GTK_GRID (table), picker, 1, 2, 1, 1);
 
+    print_button = gtk_button_new_from_icon_name ("printer-symbolic");
+    gtk_widget_set_tooltip_text (print_button, "Print file");
+    gtk_widget_set_sensitive (print_button, FALSE);
+    g_signal_connect (print_button, "clicked", G_CALLBACK (print_file), NULL);
+    gtk_box_append (GTK_BOX (picker), print_button);
+
+    gtk_grid_attach (GTK_GRID (table), picker, 1, 2, 1, 1);
 
     label = gtk_label_new ("URI:");
     gtk_widget_set_halign (label, GTK_ALIGN_START);
@@ -241,7 +316,7 @@ do_pickers (GtkWidget *do_widget)
   }
 
   if (!gtk_widget_get_visible (window))
-    gtk_widget_set_visible (window, TRUE);
+    gtk_window_present (GTK_WINDOW (window));
   else
     gtk_window_destroy (GTK_WINDOW (window));
 

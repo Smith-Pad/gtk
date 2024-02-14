@@ -18,6 +18,7 @@ gdk_wayland_sources = files([
   'gdkprimary-wayland.c',
   'gdkseat-wayland.c',
   'gdksurface-wayland.c',
+  'gdksubsurface-wayland.c',
   'gdktoplevel-wayland.c',
   'gdkpopup-wayland.c',
   'gdkvulkancontext-wayland.c',
@@ -55,6 +56,7 @@ proto_sources = [
   ['gtk-shell', 'private', ],
   ['primary-selection', 'unstable', 'v1', ],
   ['pointer-gestures', 'unstable', 'v1', ],
+  ['viewporter', 'stable', ],
   ['xdg-shell', 'unstable', 'v6', ],
   ['xdg-shell', 'stable', ],
   ['xdg-foreign', 'unstable', 'v1', ],
@@ -65,6 +67,8 @@ proto_sources = [
   ['xdg-output', 'unstable', 'v1', ],
   ['idle-inhibit', 'unstable', 'v1', ],
   ['xdg-activation', 'staging', 'v1', ],
+  ['fractional-scale', 'staging', 'v1', ],
+  ['linux-dmabuf', 'unstable', 'v1', ],
 ]
 
 gdk_wayland_gen_headers = []
@@ -125,3 +129,6 @@ libgdk_wayland = static_library('gdk-wayland',
   link_with: [ libwayland_cursor, ],
   dependencies: [ gdk_deps, gdk_wayland_deps ],
 )
+
+# Used to generate pkg-config Requires
+wayland_public_deps = [wlclientdep]

@@ -11,6 +11,9 @@
 #include "gtkgears.h"
 #include "gskshaderpaintable.h"
 
+#include "nodewidget.h"
+#include "graphwidget.h"
+
 const char *const css =
 ".blurred-button {"
 "  box-shadow: 0px 0px 5px 10px rgba(0, 0, 0, 0.5);"
@@ -68,13 +71,11 @@ create_blurred_button (void)
   return w;
 }
 
-G_GNUC_BEGIN_IGNORE_DEPRECATIONS
 static GtkWidget *
 create_font_button (void)
 {
-  return gtk_font_button_new ();
+  return gtk_font_dialog_button_new (gtk_font_dialog_new ());
 }
-G_GNUC_END_IGNORE_DEPRECATIONS
 
 static GtkWidget *
 create_level_bar (void)
@@ -203,6 +204,18 @@ create_menu_button (void)
   return w;
 }
 
+static GtkWidget *
+create_tiger (void)
+{
+  return node_widget_new ("/fishbowl/tiger.node");
+}
+
+static GtkWidget *
+create_graph (void)
+{
+  return graph_widget_new ();
+}
+
 static const struct {
   const char *name;
   GtkWidget * (*create_func) (void);
@@ -220,6 +233,8 @@ static const struct {
   { "Switch",     create_switch         },
   { "Menubutton", create_menu_button    },
   { "Shader",     create_cogs           },
+  { "Tiger",      create_tiger          },
+  { "Graph",      create_graph          },
 };
 
 static int selected_widget_type = -1;
@@ -301,7 +316,7 @@ do_fishbowl (GtkWidget *do_widget)
   if (provider == NULL)
     {
       provider = gtk_css_provider_new ();
-      gtk_css_provider_load_from_data (provider, css, -1);
+      gtk_css_provider_load_from_string (provider, css);
       gtk_style_context_add_provider_for_display (gdk_display_get_default (),
                                                   GTK_STYLE_PROVIDER (provider),
                                                   GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
@@ -310,11 +325,20 @@ do_fishbowl (GtkWidget *do_widget)
   if (!window)
     {
       GtkBuilder *builder;
+      GtkBuilderScope *scope;
       GtkWidget *bowl;
 
       g_type_ensure (GTK_TYPE_FISHBOWL);
 
-      builder = gtk_builder_new_from_resource ("/fishbowl/fishbowl.ui");
+      scope = gtk_builder_cscope_new ();
+      gtk_builder_cscope_add_callback (GTK_BUILDER_CSCOPE (scope), fishbowl_prev_button_clicked_cb);
+      gtk_builder_cscope_add_callback (GTK_BUILDER_CSCOPE (scope), fishbowl_next_button_clicked_cb);
+      gtk_builder_cscope_add_callback (GTK_BUILDER_CSCOPE (scope), fishbowl_changes_toggled_cb);
+      gtk_builder_cscope_add_callback (GTK_BUILDER_CSCOPE (scope), format_header_cb);
+
+      builder = gtk_builder_new ();
+      gtk_builder_set_scope (builder, scope);
+      gtk_builder_add_from_resource (builder, "/fishbowl/fishbowl.ui", NULL);
       window = GTK_WIDGET (gtk_builder_get_object (builder, "window"));
       g_object_add_weak_pointer (G_OBJECT (window), (gpointer *)&window);
 
@@ -326,6 +350,7 @@ do_fishbowl (GtkWidget *do_widget)
 
       gtk_widget_realize (window);
       g_object_unref (builder);
+      g_object_unref (scope);
     }
 
   if (!gtk_widget_get_visible (window))

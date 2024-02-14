@@ -19,8 +19,7 @@
  * License along with this library. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef __GDK_X11_DISPLAY__
-#define __GDK_X11_DISPLAY__
+#pragma once
 
 #include "gdkdisplayprivate.h"
 #include "gdkkeys.h"
@@ -145,7 +144,8 @@ struct _GdkX11Display
   guint server_time_is_monotonic_time : 1;
 
   /* GLX extensions we check */
-  guint has_glx_swap_interval : 1;
+  guint has_glx_sgi_swap_control : 1;
+  guint has_glx_swap_control : 1;
   guint has_glx_create_context : 1;
   guint has_glx_texture_from_pixmap : 1;
   guint has_glx_video_sync : 1;
@@ -178,4 +178,3 @@ GdkFilterReturn _gdk_wm_protocols_filter        (const XEvent   *xevent,
 
 G_END_DECLS
 
-#endif  /* __GDK_X11_DISPLAY__ */

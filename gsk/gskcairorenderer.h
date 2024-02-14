@@ -18,8 +18,11 @@
  * Authors: Benjamin Otte <otte@gnome.org>
  */
 
-#ifndef __GSK_CAIRO_RENDERER_H__
-#define __GSK_CAIRO_RENDERER_H__
+#pragma once
+
+#if !defined (__GSK_H_INSIDE__) && !defined (GTK_COMPILATION)
+#error "Only <gsk/gsk.h> can be included directly."
+#endif
 
 #include <cairo.h>
 #include <gsk/gskrenderer.h>
@@ -53,4 +56,3 @@ GskRenderer *           gsk_cairo_renderer_new                  (void);
 
 G_END_DECLS
 
-#endif /* __GSK_CAIRO_RENDERER_H__ */

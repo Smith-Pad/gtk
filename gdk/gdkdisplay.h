@@ -19,14 +19,12 @@
  * License along with this library. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef __GDK_DISPLAY_H__
-#define __GDK_DISPLAY_H__
+#pragma once
 
 #if !defined (__GDK_H_INSIDE__) && !defined (GTK_COMPILATION)
 #error "Only <gdk/gdk.h> can be included directly."
 #endif
 
-#include <gdk/gdkversionmacros.h>
 #include <gdk/gdktypes.h>
 #include <gdk/gdkevents.h>
 #include <gdk/gdkseat.h>
@@ -65,6 +63,8 @@ GDK_AVAILABLE_IN_ALL
 gboolean    gdk_display_is_composited      (GdkDisplay  *display);
 GDK_AVAILABLE_IN_ALL
 gboolean    gdk_display_is_rgba            (GdkDisplay  *display);
+GDK_AVAILABLE_IN_4_14
+gboolean    gdk_display_supports_shadow_width (GdkDisplay *display);
 GDK_AVAILABLE_IN_ALL
 gboolean    gdk_display_supports_input_shapes (GdkDisplay    *display);
 
@@ -136,8 +136,11 @@ gboolean     gdk_display_get_setting (GdkDisplay *display,
                                       const char *name,
                                       GValue     *value);
 
+GDK_AVAILABLE_IN_4_14
+GdkDmabufFormats *
+             gdk_display_get_dmabuf_formats (GdkDisplay *display);
+
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(GdkDisplay, g_object_unref)
 
 G_END_DECLS
 
-#endif  /* __GDK_DISPLAY_H__ */

@@ -20,7 +20,6 @@
 #include <glib.h>
 #include <gdk-pixbuf/gdk-pixdata.h>
 
-
 #define VERBOSE(x)
 
 #define check(name,condition) \
@@ -400,4 +399,3 @@ gtk_icon_cache_validate (CacheInfo *info)
 
   return TRUE;
 }
-

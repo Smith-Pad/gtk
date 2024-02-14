@@ -22,8 +22,7 @@
  * GTK+ at ftp://ftp.gtk.org/pub/gtk/.
  */
 
-#ifndef __GTK_SIZE_REQUEST_CACHE_PRIVATE_H__
-#define __GTK_SIZE_REQUEST_CACHE_PRIVATE_H__
+#pragma once
 
 #include <glib.h>
 #include <gtk/gtkenums.h>
@@ -71,7 +70,7 @@ typedef struct {
   CachedSizeX  cached_size_x;
   CachedSizeY  cached_size_y;
 
-  GtkSizeRequestMode request_mode   : 3;
+  guint       request_mode          : 3; /* GtkSizeRequestMode */
   guint       request_mode_valid    : 1;
   struct {
     guint       n_cached_requests   : 15;
@@ -101,4 +100,3 @@ gboolean        _gtk_size_request_cache_lookup                  (const SizeReque
 
 G_END_DECLS
 
-#endif /* __GTK_SIZE_REQUEST_CACHE_PRIVATE_H__ */

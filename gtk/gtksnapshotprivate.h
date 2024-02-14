@@ -15,11 +15,11 @@
  * License along with this library. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef __GTK_SNAPSHOT_PRIVATE_H__
-#define __GTK_SNAPSHOT_PRIVATE_H__
+#pragma once
 
 #include "gtksnapshot.h"
 
+#include "gdk/gdksubsurfaceprivate.h"
 #include "gsk/gskrendernodeprivate.h"
 
 G_BEGIN_DECLS
@@ -34,6 +34,8 @@ void                    gtk_snapshot_append_text                (GtkSnapshot    
 void                    gtk_snapshot_push_collect               (GtkSnapshot            *snapshot);
 GskRenderNode *         gtk_snapshot_pop_collect                (GtkSnapshot            *snapshot);
 
+void                    gtk_snapshot_push_subsurface            (GtkSnapshot            *snapshot,
+                                                                 GdkSubsurface          *subsurface);
+
 G_END_DECLS
 
-#endif /* __GTK_SNAPSHOT_PRIVATE_H__ */

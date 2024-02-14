@@ -1,6 +1,6 @@
 /*  Copyright 2015 Red Hat, Inc.
  *
- * GTK+ is free software; you can redistribute it and/or modify it
+ * GTK is free software; you can redistribute it and/or modify it
  * under the terms of the GNU Lesser General Public License as
  * published by the Free Software Foundation; either version 2 of the
  * License, or (at your option) any later version.
@@ -11,7 +11,7 @@
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with GTK+; see the file COPYING.  If not,
+ * License along with GTK; see the file COPYING.  If not,
  * see <http://www.gnu.org/licenses/>.
  *
  * Author: Matthias Clasen
@@ -328,7 +328,8 @@ screenshot_file (const char *filename,
                            g_bytes_get_size (bytes),
                            &error))
     {
-      g_print (_("Output written to %s.\n"), save_to);
+      if (save_file == NULL)
+        g_print (_("Output written to %s.\n"), save_to);
     }
   else
     {
@@ -359,7 +360,7 @@ do_screenshot (int          *argc,
     { "css", 0, 0, G_OPTION_ARG_FILENAME, &css, N_("Use style from CSS file"), N_("FILE") },
     { "node", 0, 0, G_OPTION_ARG_NONE, &as_node, N_("Save as node file instead of png"), NULL },
     { "force", 0, 0, G_OPTION_ARG_NONE, &force, N_("Overwrite existing file"), NULL },
-    { G_OPTION_REMAINING, 0, 0, G_OPTION_ARG_FILENAME_ARRAY, &filenames, NULL, N_("FILE") },
+    { G_OPTION_REMAINING, 0, 0, G_OPTION_ARG_FILENAME_ARRAY, &filenames, NULL, N_("FILE…") },
     { NULL, }
   };
   GError *error = NULL;
@@ -370,11 +371,11 @@ do_screenshot (int          *argc,
       exit (1);
     }
 
-  g_set_prgname ("gtk4-builder-tool screenshot");
+  g_set_prgname ("gtk4-builder-tool render");
   context = g_option_context_new (NULL);
   g_option_context_set_translation_domain (context, GETTEXT_PACKAGE);
   g_option_context_add_main_entries (context, entries, NULL);
-  g_option_context_set_summary (context, _("Take a screenshot of the file."));
+  g_option_context_set_summary (context, _("Render a .ui file to an image."));
 
   if (!g_option_context_parse (context, argc, (char ***)argv, &error))
     {
@@ -393,7 +394,7 @@ do_screenshot (int          *argc,
 
   if (g_strv_length (filenames) > 2)
     {
-      g_printerr (_("Can only screenshot a single .ui file and a single output file\n"));
+      g_printerr (_("Can only render a single .ui file to a single output file\n"));
       exit (1);
     }
 

@@ -2,18 +2,28 @@
 
 GSK render nodes can be serialized and deserialized using APIs such as `gsk_render_node_serialize()` and `gsk_render_node_deserialize()`. The intended use for this is development - primarily the development of GTK - by allowing things such as creating testsuites and benchmarks, exchanging nodes in bug reports. GTK includes the `gtk4-node-editor` application for creating such test files.
 
-The format is a text format that follows the [CSS syntax rules](https://drafts.csswg.org/css-syntax-3/). In particular, this means that every array of bytes will produce a render node when parsed, as there is a defined error recovery method. For more details on error handling, please refer to the documentation of the aprsing APIs.
+The format is a text format that follows the [CSS syntax rules](https://drafts.csswg.org/css-syntax-3/). In particular, this means that every array of bytes will produce a render node when parsed, as there is a defined error recovery method. For more details on error handling, please refer to the documentation of the parsing APIs.
 
 The grammar of a node text representation using [the CSS value definition syntax](https://drafts.csswg.org/css-values-3/#value-defs) looks like this:
 **document**: `<node>\*`
-**node**: container { <document> } | `<node-name> { <property>* }`
+**node**: container [ "name" ] { <document> } | `<node-type> [ "name" ] { <property>* }` | "name"
 **property**: `<property-name>: <node> | <value> ;`
 
-Each node has its own `<node-name>` and supports a custom set of properties, each with their own `<property-name>` and syntax. The following paragraphs document each of the nodes and their properties.
+Each node has its own `<node-type>` and supports a custom set of properties, each with their own `<property-name>` and syntax. The following paragraphs document each of the nodes and their properties.
 
 When serializing and the value of a property equals the default value, this value will not be serialized. Serialization aims to produce an output as small as possible.
 
 To embed newlines in strings, use \A. To break a long string into multiple lines, escape the newline with a \.
+
+# Names
+
+### Nodes
+
+Nodes can be given a name by adding a string after the `<node-type>` in their definition. That same node can then be used further down in the document by specifying just the name identifying the node.
+
+### Textures
+
+Just like nodes, textures can be referenced by name. When defining a named texture, the name has to be placed in front of the URL.
 
 # Nodes
 
@@ -137,6 +147,19 @@ Creates a node like `gsk_cross_fade_node_new()` with the given properties.
 
 Creates a node like `gsk_debug_node_new()` with the given properties.
 
+### fill
+
+| property  | syntax          | default                | printed     |
+| --------- | --------------- | ---------------------- | ----------- |
+| child     | `<node>`        | *see below*            | always      |
+| path      | `<string>`      | ""                     | always      |
+| fill-rule | `<fill-rule>`   | winding                | always      |
+
+Creates a node like `gsk_fill_node_new()` with the given properties.
+
+The default child node is the default color node, but created with the
+bounds of the path.
+
 ### glshader
 
 | property   | syntax             | default                | printed     |
@@ -183,7 +206,7 @@ Creates a node like `gsk_linear_gradient_node_new()` with the given properties.
 | property | syntax           | default                | printed     |
 | -------- | ---------------- | ---------------------- | ----------- |
 | source   | `<node>`         | color { }              | always      |
-| mode     | `<blend-mode>`   | alpha                  | non-default |
+| mode     | `<mask-mode>`    | alpha                  | non-default |
 | mask     | `<node>`         | color { }              | always      |
 
 Creates a node like `gsk_mask_node_new()` with the given properties.
@@ -279,28 +302,58 @@ Creates a node like `gsk_rounded_clip_node_new()` with the given properties.
 
 Creates a node like `gsk_shadow_node_new()` with the given properties.
 
+### stroke
+
+| property    | syntax             | default           | printed     |
+| ----------- | ------------------ | ----------------- | ----------- |
+| child       | `<node>`           | *see below*       | always      |
+| path        | `<string>`         | ""                | always      |
+| line-width  | `<number>`         | 0                 | non-default |
+| line-cap    | `<line-cap>`       | butt              | always      |
+| line-join   | `<line-join>`      | miter             | always      |
+| miter-limit | `<number>`         | 4                 | non-default |
+| dash        | `<number>{+}|none` | none              | non-default |
+| dash-offset | `<number>`         | 0                 | non-default |
+
+Creates a node like `gsk_stroke_node_new()` with the given properties.
+
+The default child node is the default color node, but created with the
+stroke bounds of the path.
+
 ### text
 
-| property | syntax           | default                | printed     |
-| -------- | ---------------- | ---------------------- | ----------- |
-| color    | `<color>`        | black                  | non-default |
-| font     | `<string>`       | "Cantarell 11"         | always      |
-| glyphs   | `<glyphs>`       | "Hello"                | always      |
-| offset   | `<point>`        | 0 0                    | non-default |
+| property | syntax              | default             | printed     |
+| -------- | ------------------- | ------------------- | ----------- |
+| color    | `<color>`           | black               | non-default |
+| font     | `<string>` `<url>`? | "Cantarell 11"      | always      |
+| glyphs   | `<glyphs>`          | "Hello"             | always      |
+| offset   | `<point>`           | 0 0                 | non-default |
 
 Creates a node like `gsk_text_node_new()` with the given properties.
+
+If a url is specified for the font, it must point to a font file for the
+font that is specified in the string. It can be either a data url containing
+a base64-encoded font file, or a regular url that points to a font file.
+
+Glyphs can be specified as an ASCII string, or as a comma-separated list of
+their glyph ID and advance width. Optionally, x and y offsets and flags can
+be specified as well, like this: 40 10 0 0 color.
 
 If the given font does not exist or the given glyphs are invalid for the given
 font, an error node will be returned.
 
 ### texture
 
-| property | syntax           | default                | printed     |
-| -------- | ---------------- | ---------------------- | ----------- |
-| bounds   | `<rect>`         | 50                     | always      |
-| texture  | `<url>`          | *see below*            | always      |
+| property | syntax              | default                | printed     |
+| -------- | ------------------- | ---------------------- | ----------- |
+| bounds   | `<rect>`            | 50                     | always      |
+| texture  | `<string>`?`<url>`? | *see below*            | always      |
 
 Creates a node like `gsk_texture_node_new()` with the given properties.
+
+If a string is specified for the texture, it will be used as a name for the text.
+Textures can be reused by specifying the name of a previously used texture. In
+that case, the url can be omitted.
 
 The default texture is a 10x10 checkerboard with the top left and bottom right
 5x5 being in the color #FF00CC and the other part being transparent. A possible

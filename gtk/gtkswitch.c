@@ -34,19 +34,26 @@
  * empty area, or by dragging the handle.
  *
  * `GtkSwitch` can also handle situations where the underlying state
- * changes with a delay. See [signal@GtkSwitch::state-set] for details.
+ * changes with a delay. In this case, the slider position indicates
+ * the user's recent change (as indicated by the [property@Gtk.Switch:active]
+ * property), and the color indicates whether the underlying state (represented
+ * by the [property@Gtk.Switch:state] property) has been updated yet.
+ *
+ * ![GtkSwitch with delayed state change](switch-state.png)
+ *
+ * See [signal@Gtk.Switch::state-set] for details.
  *
  * # CSS nodes
  *
  * ```
  * switch
- * ├── label
- * ├── label
+ * ├── image
+ * ├── image
  * ╰── slider
  * ```
  *
  * `GtkSwitch` has four css nodes, the main node with the name switch and
- * subnodes for the slider and the on and off labels. Neither of them is
+ * subnodes for the slider and the on and off images. Neither of them is
  * using any style classes.
  *
  * # Accessibility
@@ -133,6 +140,16 @@ G_DEFINE_TYPE_WITH_CODE (GtkSwitch, gtk_switch, GTK_TYPE_WIDGET,
                          G_IMPLEMENT_INTERFACE (GTK_TYPE_ACTIONABLE,
                                                 gtk_switch_actionable_iface_init))
 
+static gboolean
+is_right_side (GtkWidget *widget,
+               gboolean   active)
+{
+  if (_gtk_widget_get_direction (widget) == GTK_TEXT_DIR_LTR)
+    return active;
+  else
+    return !active;
+}
+
 static void
 gtk_switch_end_toggle_animation (GtkSwitch *self)
 {
@@ -149,16 +166,18 @@ gtk_switch_on_frame_clock_update (GtkWidget     *widget,
                                   gpointer       user_data)
 {
   GtkSwitch *self = GTK_SWITCH (widget);
+  double progress;
 
   gtk_progress_tracker_advance_frame (&self->tracker,
                                       gdk_frame_clock_get_frame_time (clock));
 
   if (gtk_progress_tracker_get_state (&self->tracker) != GTK_PROGRESS_STATE_AFTER)
     {
-      if (self->is_active)
-        self->handle_pos = 1.0 - gtk_progress_tracker_get_ease_out_cubic (&self->tracker, FALSE);
+      progress = gtk_progress_tracker_get_ease_out_cubic (&self->tracker, FALSE);
+      if (is_right_side (widget, self->is_active))
+        self->handle_pos = 1.0 - progress;
       else
-        self->handle_pos = gtk_progress_tracker_get_ease_out_cubic (&self->tracker, FALSE);
+        self->handle_pos = progress;
     }
   else
     {
@@ -244,9 +263,9 @@ gtk_switch_pan_gesture_pan (GtkGesturePan   *gesture,
 
   gtk_gesture_set_state (GTK_GESTURE (gesture), GTK_EVENT_SEQUENCE_CLAIMED);
 
-  if (self->is_active)
+  if (is_right_side (widget, self->is_active))
     offset += width / 2;
-  
+
   offset /= width / 2;
   /* constrain the handle within the trough width */
   self->handle_pos = CLAMP (offset, 0, 1.0);
@@ -261,6 +280,7 @@ gtk_switch_pan_gesture_drag_end (GtkGestureDrag *gesture,
                                  double          y,
                                  GtkSwitch      *self)
 {
+  GtkWidget *widget = GTK_WIDGET (self);
   GdkEventSequence *sequence;
   gboolean active;
 
@@ -271,16 +291,19 @@ gtk_switch_pan_gesture_drag_end (GtkGestureDrag *gesture,
       /* if half the handle passed the middle of the switch, then we
        * consider it to be on
        */
-      active = self->handle_pos >= 0.5;
+      if (_gtk_widget_get_direction (widget) == GTK_TEXT_DIR_LTR)
+        active = self->handle_pos >= 0.5;
+      else
+        active = self->handle_pos <= 0.5;
     }
   else if (!gtk_gesture_handles_sequence (self->click_gesture, sequence))
     active = self->is_active;
   else
     return;
 
-  self->handle_pos = active ? 1.0 : 0.0;
+  self->handle_pos = is_right_side (widget, active) ? 1.0 : 0.0;
   gtk_switch_set_active (self, active);
-  gtk_widget_queue_allocate (GTK_WIDGET (self));
+  gtk_widget_queue_allocate (widget);
 }
 
 static void
@@ -301,13 +324,14 @@ gtk_switch_measure (GtkWidget      *widget,
   GtkSwitch *self = GTK_SWITCH (widget);
   int slider_minimum, slider_natural;
   int on_nat, off_nat;
+  int on_baseline, off_baseline;
 
   gtk_widget_measure (self->slider, orientation, -1,
                       &slider_minimum, &slider_natural,
                       NULL, NULL);
 
-  gtk_widget_measure (self->on_image, orientation, for_size, NULL, &on_nat, NULL, NULL);
-  gtk_widget_measure (self->off_image, orientation, for_size, NULL, &off_nat, NULL, NULL);
+  gtk_widget_measure (self->on_image, orientation, for_size, NULL, &on_nat, NULL, &on_baseline);
+  gtk_widget_measure (self->off_image, orientation, for_size, NULL, &off_nat, NULL, &off_baseline);
 
   if (orientation == GTK_ORIENTATION_HORIZONTAL)
     {
@@ -318,8 +342,12 @@ gtk_switch_measure (GtkWidget      *widget,
   else
     {
       int text_height = MAX (on_nat, off_nat);
+
       *minimum = MAX (slider_minimum, text_height);
       *natural = MAX (slider_natural, text_height);
+
+      *minimum_baseline = MAX (on_baseline, off_baseline) + MAX ((slider_minimum - text_height) / 2, 0);
+      *natural_baseline = MAX (on_baseline, off_baseline) + MAX ((slider_natural - text_height) / 2, 0);
     }
 }
 
@@ -342,6 +370,8 @@ gtk_switch_allocate (GtkWidget *widget,
   /* Center ON icon in left half */
   gtk_widget_measure (self->on_image, GTK_ORIENTATION_HORIZONTAL, -1, &min, NULL, NULL, NULL);
   child_alloc.x = ((width / 2) - min) / 2;
+  if (is_right_side (widget, FALSE))
+    child_alloc.x += width / 2;
   child_alloc.width = min;
   gtk_widget_measure (self->on_image, GTK_ORIENTATION_VERTICAL, min, &min, NULL, NULL, NULL);
   child_alloc.y = (height - min) / 2;
@@ -350,12 +380,26 @@ gtk_switch_allocate (GtkWidget *widget,
 
   /* Center OFF icon in right half */
   gtk_widget_measure (self->off_image, GTK_ORIENTATION_HORIZONTAL, -1, &min, NULL, NULL, NULL);
-  child_alloc.x = (width / 2) + ((width / 2) - min) / 2;
+  child_alloc.x = ((width / 2) - min) / 2;
+  if (is_right_side (widget, TRUE))
+    child_alloc.x += width / 2;
   child_alloc.width = min;
   gtk_widget_measure (self->off_image, GTK_ORIENTATION_VERTICAL, min, &min, NULL, NULL, NULL);
   child_alloc.y = (height - min) / 2;
   child_alloc.height = min;
   gtk_widget_size_allocate (self->off_image, &child_alloc, -1);
+}
+
+static void
+gtk_switch_direction_changed (GtkWidget       *widget,
+                              GtkTextDirection previous_dir)
+{
+  GtkSwitch *self = GTK_SWITCH (widget);
+
+  self->handle_pos = 1.0 - self->handle_pos;
+  gtk_widget_queue_allocate (widget);
+
+  GTK_WIDGET_CLASS (gtk_switch_parent_class)->direction_changed (widget, previous_dir);
 }
 
 static void
@@ -505,6 +549,18 @@ state_set (GtkSwitch *self,
   return TRUE;
 }
 
+static gboolean
+translate_switch_shapes_to_opacity (GBinding     *binding,
+                                    const GValue *from_value,
+                                    GValue       *to_value,
+                                    gpointer      user_data)
+{
+  gboolean visible = g_value_get_boolean (from_value);
+  g_value_set_double (to_value, visible ? 1.0 : 0.0);
+
+  return TRUE;
+}
+
 static void
 gtk_switch_class_init (GtkSwitchClass *klass)
 {
@@ -526,7 +582,7 @@ gtk_switch_class_init (GtkSwitchClass *klass)
    *
    * The backend state that is controlled by the switch.
    *
-   * See [signal@GtkSwitch::state-set] for details.
+   * See [signal@Gtk.Switch::state-set] for details.
    */
   switch_props[PROP_STATE] =
     g_param_spec_boolean ("state", NULL, NULL,
@@ -539,6 +595,8 @@ gtk_switch_class_init (GtkSwitchClass *klass)
   gobject_class->finalize = gtk_switch_finalize;
 
   g_object_class_install_properties (gobject_class, LAST_PROP, switch_props);
+
+  widget_class->direction_changed = gtk_switch_direction_changed;
 
   klass->activate = gtk_switch_activate;
   klass->state_set = state_set;
@@ -612,6 +670,7 @@ gtk_switch_init (GtkSwitch *self)
 {
   GtkLayoutManager *layout;
   GtkGesture *gesture;
+  GtkSettings *gtk_settings;
 
   gtk_widget_set_focusable (GTK_WIDGET (self), TRUE);
 
@@ -644,17 +703,31 @@ gtk_switch_init (GtkSwitch *self)
                                   gtk_switch_allocate);
   gtk_widget_set_layout_manager (GTK_WIDGET (self), layout);
 
+  gtk_settings = gtk_settings_get_default ();
+
   self->on_image = g_object_new (GTK_TYPE_IMAGE,
                                  "accessible-role", GTK_ACCESSIBLE_ROLE_NONE,
                                  "icon-name", "switch-on-symbolic",
                                  NULL);
   gtk_widget_set_parent (self->on_image, GTK_WIDGET (self));
 
+  g_object_bind_property_full (gtk_settings, "gtk-show-status-shapes",
+                               self->on_image, "opacity",
+                               G_BINDING_SYNC_CREATE,
+                               translate_switch_shapes_to_opacity,
+                               NULL, NULL, NULL);
+
   self->off_image = g_object_new (GTK_TYPE_IMAGE,
                                   "accessible-role", GTK_ACCESSIBLE_ROLE_NONE,
                                   "icon-name", "switch-off-symbolic",
                                   NULL);
   gtk_widget_set_parent (self->off_image, GTK_WIDGET (self));
+
+  g_object_bind_property_full (gtk_settings, "gtk-show-status-shapes",
+                               self->off_image, "opacity",
+                               G_BINDING_SYNC_CREATE,
+                               translate_switch_shapes_to_opacity,
+                               NULL, NULL, NULL);
 
   self->slider = gtk_gizmo_new_with_role ("slider",
                                           GTK_ACCESSIBLE_ROLE_NONE,
@@ -664,6 +737,10 @@ gtk_switch_init (GtkSwitch *self)
   gtk_accessible_update_state (GTK_ACCESSIBLE (self),
                                GTK_ACCESSIBLE_STATE_CHECKED, FALSE,
                                -1);
+  if (is_right_side (GTK_WIDGET (self), FALSE))
+    self->handle_pos = 1.0;
+  else
+    self->handle_pos = 0.0;
 }
 
 /**
@@ -702,7 +779,7 @@ gtk_switch_set_active (GtkSwitch *self,
 
       self->is_active = is_active;
 
-      if (self->is_active)
+      if (is_right_side (GTK_WIDGET (self), self->is_active))
         self->handle_pos = 1.0;
       else
         self->handle_pos = 0.0;

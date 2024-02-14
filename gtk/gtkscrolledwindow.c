@@ -124,7 +124,9 @@
  *
  * # Accessibility
  *
- * `GtkScrolledWindow` uses the %GTK_ACCESSIBLE_ROLE_GROUP role.
+ * Until GTK 4.10, `GtkScrolledWindow` used the `GTK_ACCESSIBLE_ROLE_GROUP` role.
+ *
+ * Starting from GTK 4.12, `GtkScrolledWindow` uses the `GTK_ACCESSIBLE_ROLE_GENERIC` role.
  */
 
 /* scrolled window policy and size requisition handling:
@@ -430,7 +432,7 @@ add_scroll_binding (GtkWidgetClass *widget_class,
                     gboolean        horizontal)
 {
   guint keypad_keyval = keyval - GDK_KEY_Left + GDK_KEY_KP_Left;
-  
+
   gtk_widget_class_add_binding_signal (widget_class,
                                        keyval, mask,
                                        "scroll-child",
@@ -587,7 +589,7 @@ gtk_scrolled_window_class_init (GtkScrolledWindowClass *class)
   properties[PROP_HADJUSTMENT] =
       g_param_spec_object ("hadjustment", NULL, NULL,
                            GTK_TYPE_ADJUSTMENT,
-                           GTK_PARAM_READWRITE|G_PARAM_CONSTRUCT);
+                           GTK_PARAM_READWRITE|G_PARAM_CONSTRUCT|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
    * GtkScrolleWindow:vadjustment: (attributes org.gtk.Property.get=gtk_scrolled_window_get_vadjustment org.gtk.Property.set=gtk_scrolled_window_set_vadjustment)
@@ -597,7 +599,7 @@ gtk_scrolled_window_class_init (GtkScrolledWindowClass *class)
   properties[PROP_VADJUSTMENT] =
       g_param_spec_object ("vadjustment", NULL, NULL,
                            GTK_TYPE_ADJUSTMENT,
-                           GTK_PARAM_READWRITE|G_PARAM_CONSTRUCT);
+                           GTK_PARAM_READWRITE|G_PARAM_CONSTRUCT|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
    * GtkScrolledWindow:hscrollbar-policy:
@@ -749,6 +751,10 @@ gtk_scrolled_window_class_init (GtkScrolledWindowClass *class)
    * GtkScrolledWindow:child: (attributes org.gtk.Property.get=gtk_scrolled_window_get_child org.gtk.Property.set=gtk_scrolled_window_set_child)
    *
    * The child widget.
+   *
+   * When setting this property, if the child widget does not implement
+   * [iface@Gtk.Scrollable], the scrolled window will add the child to
+   * a [class@Gtk.Viewport] and then set the viewport as the child.
    */
   properties[PROP_CHILD] =
       g_param_spec_object ("child", NULL, NULL,
@@ -781,6 +787,9 @@ gtk_scrolled_window_class_init (GtkScrolledWindowClass *class)
                   G_TYPE_BOOLEAN, 2,
                   GTK_TYPE_SCROLL_TYPE,
                   G_TYPE_BOOLEAN);
+  g_signal_set_va_marshaller (signals[SCROLL_CHILD],
+                              G_TYPE_FROM_CLASS (gobject_class),
+                              _gtk_marshal_BOOLEAN__ENUM_BOOLEANv);
 
   /**
    * GtkScrolledWindow::move-focus-out:
@@ -870,7 +879,7 @@ gtk_scrolled_window_class_init (GtkScrolledWindowClass *class)
   add_tab_bindings (widget_class, GDK_CONTROL_MASK | GDK_SHIFT_MASK, GTK_DIR_TAB_BACKWARD);
 
   gtk_widget_class_set_css_name (widget_class, I_("scrolledwindow"));
-  gtk_widget_class_set_accessible_role (widget_class, GTK_ACCESSIBLE_ROLE_GROUP);
+  gtk_widget_class_set_accessible_role (widget_class, GTK_ACCESSIBLE_ROLE_GENERIC);
 }
 
 static gboolean
@@ -1747,8 +1756,38 @@ gtk_scrolled_window_measure (GtkWidget      *widget,
   if (priv->child && gtk_widget_get_visible (priv->child))
     {
       int min_child_size, nat_child_size;
+      int child_for_size = -1;
 
-      gtk_widget_measure (priv->child, orientation, -1,
+      /* We can pass on the requested size if we have a scrollbar policy that prevents scrolling in that direction */
+      if ((orientation == GTK_ORIENTATION_VERTICAL && priv->hscrollbar_policy == GTK_POLICY_NEVER)
+          || (orientation == GTK_ORIENTATION_HORIZONTAL && priv->vscrollbar_policy == GTK_POLICY_NEVER))
+        {
+          child_for_size = for_size;
+
+          /* If the other scrollbar is always visible and not an overlay scrollbar we must subtract it from the measure */
+          if (orientation == GTK_ORIENTATION_VERTICAL && !priv->use_indicators && priv->vscrollbar_policy == GTK_POLICY_ALWAYS)
+            {
+              int min_scrollbar_width;
+
+              gtk_widget_measure (priv->vscrollbar, GTK_ORIENTATION_HORIZONTAL, -1,
+                                  &min_scrollbar_width, NULL,
+                                  NULL, NULL);
+
+              child_for_size = MAX (0, child_for_size - min_scrollbar_width);
+            }
+          if (orientation == GTK_ORIENTATION_HORIZONTAL && !priv->use_indicators && priv->hscrollbar_policy == GTK_POLICY_ALWAYS)
+            {
+              int min_scrollbar_height;
+
+              gtk_widget_measure (priv->hscrollbar, GTK_ORIENTATION_VERTICAL, -1,
+                              &min_scrollbar_height, NULL,
+                              NULL, NULL);
+
+              child_for_size = MAX (0, child_for_size - min_scrollbar_height);
+            }
+        }
+
+      gtk_widget_measure (priv->child, orientation, child_for_size,
                           &min_child_size, &nat_child_size,
                           NULL, NULL);
 
@@ -1855,24 +1894,22 @@ gtk_scrolled_window_snapshot_scrollbars_junction (GtkScrolledWindow *scrolled_wi
                                                   GtkSnapshot       *snapshot)
 {
   GtkScrolledWindowPrivate *priv = gtk_scrolled_window_get_instance_private (scrolled_window);
-  GtkAllocation hscr_allocation, vscr_allocation;
+  graphene_rect_t hscr_bounds, vscr_bounds;
   GtkCssStyle *style;
-  GdkRectangle junction_rect;
   GtkCssBoxes boxes;
 
-  gtk_widget_get_allocation (GTK_WIDGET (priv->hscrollbar), &hscr_allocation);
-  gtk_widget_get_allocation (GTK_WIDGET (priv->vscrollbar), &vscr_allocation);
+  if (!gtk_widget_compute_bounds (GTK_WIDGET (priv->hscrollbar), GTK_WIDGET (scrolled_window), &hscr_bounds))
+    return;
 
-  junction_rect.x = vscr_allocation.x;
-  junction_rect.y = hscr_allocation.y;
-  junction_rect.width = vscr_allocation.width;
-  junction_rect.height = hscr_allocation.height;
+  if (!gtk_widget_compute_bounds (GTK_WIDGET (priv->vscrollbar), GTK_WIDGET (scrolled_window), &vscr_bounds))
+    return;
 
   style = gtk_css_node_get_style (priv->junction_node);
 
   gtk_css_boxes_init_border_box (&boxes, style,
-                                 junction_rect.x, junction_rect.y,
-                                 junction_rect.width, junction_rect.height);
+                                 vscr_bounds.origin.x, hscr_bounds.origin.y,
+                                 vscr_bounds.size.width, hscr_bounds.size.height);
+
   gtk_css_style_snapshot_background (&boxes, snapshot);
   gtk_css_style_snapshot_border (&boxes, snapshot);
 }
@@ -2222,7 +2259,7 @@ gtk_scrolled_window_set_vadjustment (GtkScrolledWindow *scrolled_window,
   else
     {
       GtkAdjustment *old_adjustment;
-      
+
       old_adjustment = gtk_scrollbar_get_adjustment (GTK_SCROLLBAR (priv->vscrollbar));
       if (old_adjustment == vadjustment)
         return;
@@ -2876,7 +2913,7 @@ gtk_scrolled_window_scroll_child (GtkScrolledWindow *scrolled_window,
   if (adjustment)
     {
       double value = gtk_adjustment_get_value (adjustment);
-      
+
       switch (scroll)
         {
         case GTK_SCROLL_STEP_FORWARD:
@@ -3389,7 +3426,7 @@ gtk_scrolled_window_focus (GtkWidget        *widget,
       priv->focus_out = FALSE; /* Clear this to catch the wrap-around case */
       return FALSE;
     }
-  
+
   if (gtk_widget_is_focus (widget))
     return FALSE;
 
@@ -3837,7 +3874,7 @@ gtk_scrolled_window_unrealize (GtkWidget *widget)
 
   settings = gtk_widget_get_settings (widget);
 
-  g_signal_handlers_disconnect_by_func (settings, gtk_scrolled_window_sync_use_indicators, widget);
+  g_signal_handlers_disconnect_by_func (settings, gtk_scrolled_window_update_use_indicators, widget);
 
   GTK_WIDGET_CLASS (gtk_scrolled_window_parent_class)->unrealize (widget);
 }
@@ -4181,6 +4218,10 @@ gtk_scrolled_window_get_propagate_natural_height (GtkScrolledWindow *scrolled_wi
  * @child: (nullable): the child widget
  *
  * Sets the child widget of @scrolled_window.
+ *
+ * If @child does not implement the [iface@Gtk.Scrollable] interface,
+ * the scrolled window will add @child to a [class@Gtk.Viewport] instance
+ * and then add the viewport as its child widget.
  */
 void
 gtk_scrolled_window_set_child (GtkScrolledWindow *scrolled_window,
@@ -4190,13 +4231,19 @@ gtk_scrolled_window_set_child (GtkScrolledWindow *scrolled_window,
   GtkWidget *scrollable_child;
 
   g_return_if_fail (GTK_IS_SCROLLED_WINDOW (scrolled_window));
+  g_return_if_fail (child == NULL ||
+                    priv->child == child ||
+                    (priv->auto_added_viewport && gtk_viewport_get_child (GTK_VIEWPORT (priv->child)) == child) ||
+                    gtk_widget_get_parent (child) == NULL);
+
+  if (priv->child == child ||
+      (priv->auto_added_viewport && gtk_viewport_get_child (GTK_VIEWPORT (priv->child)) == child))
+    return;
 
   if (priv->child)
     {
       if (priv->auto_added_viewport)
-        {
-          gtk_viewport_set_child (GTK_VIEWPORT (priv->child), NULL);
-        }
+        gtk_viewport_set_child (GTK_VIEWPORT (priv->child), NULL);
 
       g_object_set (priv->child,
                     "hadjustment", NULL,
@@ -4204,6 +4251,7 @@ gtk_scrolled_window_set_child (GtkScrolledWindow *scrolled_window,
                     NULL);
 
       g_clear_pointer (&priv->child, gtk_widget_unparent);
+      priv->auto_added_viewport = FALSE;
     }
 
   if (child)
@@ -4268,6 +4316,10 @@ gtk_scrolled_window_set_child (GtkScrolledWindow *scrolled_window,
  * @scrolled_window: a `GtkScrolledWindow`
  *
  * Gets the child widget of @scrolled_window.
+ *
+ * If the scrolled window automatically added a [class@Gtk.Viewport], this
+ * function will return the viewport widget, and you can retrieve its child
+ * using [method@Gtk.Viewport.get_child].
  *
  * Returns: (nullable) (transfer none): the child widget of @scrolled_window
  */

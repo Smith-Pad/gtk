@@ -125,7 +125,7 @@ gsk_gl_icon_library_add (GskGLIconLibrary     *self,
     {
       pixel_data = surface_data;
       gl_format = GL_BGRA;
-      gl_type = GL_UNSIGNED_INT_8_8_8_8_REV;
+      gl_type = GL_UNSIGNED_BYTE;
     }
 
   texture_id = GSK_GL_TEXTURE_ATLAS_ENTRY_TEXTURE (icon_data);
@@ -144,6 +144,7 @@ gsk_gl_icon_library_add (GskGLIconLibrary     *self,
                    gl_format, gl_type,
                    pixel_data);
   /* Padding left */
+  glPixelStorei (GL_UNPACK_ROW_LENGTH, width);
   glTexSubImage2D (GL_TEXTURE_2D, 0,
                    packed_x, packed_y + 1,
                    1, height,
@@ -157,7 +158,6 @@ gsk_gl_icon_library_add (GskGLIconLibrary     *self,
                    pixel_data);
 
   /* Padding right */
-  glPixelStorei (GL_UNPACK_ROW_LENGTH, width);
   glPixelStorei (GL_UNPACK_SKIP_PIXELS, width - 1);
   glTexSubImage2D (GL_TEXTURE_2D, 0,
                    packed_x + width + 1, packed_y + 1,
@@ -211,6 +211,6 @@ gsk_gl_icon_library_add (GskGLIconLibrary     *self,
     {
       char message[64];
       g_snprintf (message, sizeof message, "Size %dx%d", width, height);
-      gdk_profiler_add_mark (start_time, GDK_PROFILER_CURRENT_TIME-start_time, "Upload Icon", message);
+      gdk_profiler_add_mark (start_time, GDK_PROFILER_CURRENT_TIME-start_time, "Upload icon", message);
     }
 }

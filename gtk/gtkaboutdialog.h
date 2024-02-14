@@ -20,8 +20,7 @@
    Author: Anders Carlsson <andersca@codefactory.se>
 */
 
-#ifndef __GTK_ABOUT_DIALOG_H__
-#define __GTK_ABOUT_DIALOG_H__
+#pragma once
 
 #if !defined (__GTK_H_INSIDE__) && !defined (GTK_COMPILATION)
 #error "Only <gtk/gtk.h> can be included directly."
@@ -58,6 +57,7 @@ typedef struct _GtkAboutDialog        GtkAboutDialog;
  * @GTK_LICENSE_BSD_3: The 3-clause BSD licence
  * @GTK_LICENSE_APACHE_2_0: The Apache License, version 2.0
  * @GTK_LICENSE_MPL_2_0: The Mozilla Public License, version 2.0
+ * @GTK_LICENSE_0BSD: Zero-Clause BSD license
  *
  * The type of license for an application.
  *
@@ -88,7 +88,8 @@ typedef enum {
 
   GTK_LICENSE_BSD_3,
   GTK_LICENSE_APACHE_2_0,
-  GTK_LICENSE_MPL_2_0
+  GTK_LICENSE_MPL_2_0,
+  GTK_LICENSE_0BSD
 } GtkLicense;
 
 
@@ -191,6 +192,5 @@ G_DEFINE_AUTOPTR_CLEANUP_FUNC(GtkAboutDialog, g_object_unref)
 
 G_END_DECLS
 
-#endif /* __GTK_ABOUT_DIALOG_H__ */
 
 

@@ -17,8 +17,7 @@
  * Author: Ryan Lortie <desrt@desrt.ca>
  */
 
-#ifndef __GTK_ACTION_MUXER_H__
-#define __GTK_ACTION_MUXER_H__
+#pragma once
 
 #include <gio/gio.h>
 #include "gtkwidget.h"
@@ -74,7 +73,7 @@ gboolean                gtk_action_muxer_query_action                   (GtkActi
                                                                          const GVariantType **parameter_type,
                                                                          const GVariantType **state_type,
                                                                          GVariant           **state_hint,
-                                                                         GVariant           **state);
+                                                                         GVariant           **state) G_GNUC_WARN_UNUSED_RESULT;
 void                    gtk_action_muxer_activate_action                (GtkActionMuxer      *muxer,
                                                                          const char          *action_name,
                                                                          GVariant            *parameter);
@@ -110,4 +109,3 @@ char *                  gtk_normalise_detailed_action_name              (const c
 
 G_END_DECLS
 
-#endif /* __GTK_ACTION_MUXER_H__ */

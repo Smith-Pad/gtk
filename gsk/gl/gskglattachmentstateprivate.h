@@ -18,8 +18,7 @@
  * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
-#ifndef __GSK_GL_ATTACHMENT_STATE_PRIVATE_H__
-#define __GSK_GL_ATTACHMENT_STATE_PRIVATE_H__
+#pragma once
 
 #include "gskgltypesprivate.h"
 
@@ -30,6 +29,9 @@ typedef struct _GskGLBindFramebuffer GskGLBindFramebuffer;
 typedef struct _GskGLBindTexture     GskGLBindTexture;
 
 #define GSK_GL_N_FILTERS 3
+#define SAMPLER_EXTERNAL 9
+
+G_STATIC_ASSERT (SAMPLER_EXTERNAL >= GSK_GL_N_FILTERS * GSK_GL_N_FILTERS);
 
 static inline guint
 filter_index (GLint filter)
@@ -74,11 +76,13 @@ struct _GskGLBindFramebuffer
 
 G_STATIC_ASSERT (sizeof (GskGLBindFramebuffer) == 4);
 
+/* Increase if shaders add more textures */
+#define GSK_GL_MAX_TEXTURES_PER_PROGRAM 4
+
 struct _GskGLAttachmentState
 {
   GskGLBindFramebuffer fbo;
-  /* Increase if shaders add more textures */
-  GskGLBindTexture textures[4];
+  GskGLBindTexture textures[GSK_GL_MAX_TEXTURES_PER_PROGRAM];
   guint n_changed;
 };
 
@@ -96,4 +100,3 @@ void                  gsk_gl_attachment_state_bind_framebuffer (GskGLAttachmentS
 
 G_END_DECLS
 
-#endif /* __GSK_GL_ATTACHMENT_STATE_PRIVATE_H__ */

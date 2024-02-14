@@ -1,5 +1,6 @@
 inspector_sources = files(
   'a11y.c',
+  'a11yoverlay.c',
   'action-editor.c',
   'action-holder.c',
   'actions.c',
@@ -41,6 +42,7 @@ inspector_sources = files(
   'startrecording.c',
   'statistics.c',
   'strv-editor.c',
+  'subsurfaceoverlay.c',
   'tree-data.c',
   'type-info.c',
   'updatesoverlay.c',

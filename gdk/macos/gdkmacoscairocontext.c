@@ -189,8 +189,16 @@ copy_surface_data (GdkMacosBuffer       *from,
 }
 
 static void
+clamp_region_to_surface (cairo_region_t *region,
+                         GdkSurface     *surface)
+{
+  cairo_rectangle_int_t rectangle = {0, 0, surface->width, surface->height};
+  cairo_region_intersect_rectangle (region, &rectangle);
+}
+
+static void
 _gdk_macos_cairo_context_begin_frame (GdkDrawContext *draw_context,
-                                      gboolean        prefers_high_depth,
+                                      GdkMemoryDepth  depth,
                                       cairo_region_t *region)
 {
   GdkMacosCairoContext *self = (GdkMacosCairoContext *)draw_context;
@@ -204,6 +212,8 @@ _gdk_macos_cairo_context_begin_frame (GdkDrawContext *draw_context,
 
   surface = GDK_MACOS_SURFACE (gdk_draw_context_get_surface (draw_context));
   buffer = _gdk_macos_surface_get_buffer (surface);
+
+  clamp_region_to_surface (region, GDK_SURFACE (surface));
 
   _gdk_macos_buffer_set_damage (buffer, region);
   _gdk_macos_buffer_set_flipped (buffer, FALSE);
@@ -262,6 +272,11 @@ _gdk_macos_cairo_context_end_frame (GdkDrawContext *draw_context,
 }
 
 static void
+_gdk_macos_cairo_context_empty_frame (GdkDrawContext *draw_context)
+{
+}
+
+static void
 _gdk_macos_cairo_context_surface_resized (GdkDrawContext *draw_context)
 {
   g_assert (GDK_IS_MACOS_CAIRO_CONTEXT (draw_context));
@@ -277,6 +292,7 @@ _gdk_macos_cairo_context_class_init (GdkMacosCairoContextClass *klass)
 
   draw_context_class->begin_frame = _gdk_macos_cairo_context_begin_frame;
   draw_context_class->end_frame = _gdk_macos_cairo_context_end_frame;
+  draw_context_class->empty_frame = _gdk_macos_cairo_context_empty_frame;
   draw_context_class->surface_resized = _gdk_macos_cairo_context_surface_resized;
 
   cairo_context_class->cairo_create = _gdk_macos_cairo_context_cairo_create;

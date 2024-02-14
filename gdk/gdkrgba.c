@@ -170,7 +170,7 @@ parse_rgb_value (const char   *str,
  *
  * The string can be either one of:
  *
- * - A standard name (Taken from the Css specification).
+ * - A standard name (Taken from the CSS specification).
  * - A hexadecimal value in the form “\#rgb”, “\#rrggbb”,
  *   “\#rrrgggbbb” or ”\#rrrrggggbbbb”
  * - A hexadecimal value in the form “\#rgba”, “\#rrggbbaa”,
@@ -178,6 +178,8 @@ parse_rgb_value (const char   *str,
  * - A RGB color in the form “rgb(r,g,b)” (In this case the color
  *   will have full opacity)
  * - A RGBA color in the form “rgba(r,g,b,a)”
+ * - A HSL color in the form "hsl(hue, saturation, lightness)"
+ * - A HSLA color in the form "hsla(hue, saturation, lightness, alpha)"
  *
  * Where “r”, “g”, “b” and “a” are respectively the red, green,
  * blue and alpha color values. In the last two cases, “r”, “g”,
@@ -640,7 +642,7 @@ gdk_rgba_parser_parse (GtkCssParser *parser,
     {
       if (gtk_css_token_is_ident (token, "transparent"))
         {
-          *rgba = (GdkRGBA) { 0, 0, 0, 0 };
+          *rgba = GDK_RGBA_TRANSPARENT;
         }
       else if (gdk_rgba_parse (rgba, gtk_css_token_get_string (token)))
         {

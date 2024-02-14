@@ -52,6 +52,7 @@ typedef struct {
 
   const char *method_name;
 
+  char *exported_handle;
   GtkWindow *exported_window;
   PortalErrorHandler error_handler;
 } FilechooserPortalData;
@@ -79,7 +80,11 @@ filechooser_portal_data_clear (FilechooserPortalData *data)
 
   if (data->exported_window)
     {
-      gtk_window_unexport_handle (data->exported_window);
+      if (data->exported_handle)
+        {
+          gtk_window_unexport_handle (data->exported_window, data->exported_handle);
+          g_clear_pointer (&data->exported_handle, g_free);
+        }
       g_clear_object (&data->exported_window);
     }
 
@@ -164,12 +169,18 @@ response_cb (GDBusConnection  *connection,
       g_object_unref (filters);
       gtk_file_chooser_set_filter (GTK_FILE_CHOOSER (self), filter_to_select);
       g_object_unref (filter_to_select);
+
+      g_variant_unref (current_filter);
     }
 
   g_slist_free_full (self->custom_files, g_object_unref);
   self->custom_files = NULL;
   for (i = 0; uris[i]; i++)
     self->custom_files = g_slist_prepend (self->custom_files, g_file_new_for_uri (uris[i]));
+  self->custom_files = g_slist_reverse (self->custom_files);
+
+  g_free (uris);
+  g_variant_unref (response_data);
 
   switch (portal_response)
     {
@@ -206,11 +217,9 @@ send_close (FilechooserPortalData *data)
   GError *error = NULL;
 
   message = g_dbus_message_new_method_call (PORTAL_BUS_NAME,
-                                            PORTAL_OBJECT_PATH,
+                                            data->portal_handle,
                                             PORTAL_REQUEST_INTERFACE,
                                             "Close");
-  g_dbus_message_set_body (message,
-                           g_variant_new ("(o)", data->portal_handle));
 
   if (!g_dbus_connection_send_message (data->connection,
                                        message,
@@ -455,6 +464,7 @@ window_handle_exported (GtkWindow  *window,
       gtk_grab_add (GTK_WIDGET (data->grab_widget));
     }
 
+  data->exported_handle = g_strdup (handle_str);
   show_portal_file_chooser (self, handle_str);
 }
 

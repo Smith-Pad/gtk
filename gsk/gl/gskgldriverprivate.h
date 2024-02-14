@@ -18,8 +18,7 @@
  * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
-#ifndef __GSK_GL_DRIVER_PRIVATE_H__
-#define __GSK_GL_DRIVER_PRIVATE_H__
+#pragma once
 
 #include <gdk/gdkgltextureprivate.h>
 
@@ -70,7 +69,9 @@ typedef struct {
 #define CONCAT_EXPANDED2(a,b) a##b
 #define GSK_GL_ADD_UNIFORM(pos, KEY, name) UNIFORM_##KEY = UNIFORM_SHARED_LAST + pos,
 #define GSK_GL_DEFINE_PROGRAM(name, resource, uniforms) enum { uniforms };
+#define GSK_GL_DEFINE_PROGRAM_NO_CLIP(name, resource, uniforms) enum { uniforms };
 # include "gskglprograms.defs"
+#undef GSK_GL_DEFINE_PROGRAM_NO_CLIP
 #undef GSK_GL_DEFINE_PROGRAM
 #undef GSK_GL_ADD_UNIFORM
 #undef GSK_GL_NO_UNIFORMS
@@ -117,10 +118,13 @@ struct _GskGLDriver
   GskGLProgram *name ## _no_clip; \
   GskGLProgram *name ## _rect_clip; \
   GskGLProgram *name;
+#define GSK_GL_DEFINE_PROGRAM_NO_CLIP(name, resource, uniforms) \
+  GskGLProgram *name;
 # include "gskglprograms.defs"
 #undef GSK_GL_NO_UNIFORMS
 #undef GSK_GL_ADD_UNIFORM
 #undef GSK_GL_DEFINE_PROGRAM
+#undef GSK_GL_DEFINE_PROGRAM_NO_CLIP
 
   gint64 current_frame_id;
 
@@ -150,7 +154,8 @@ void                gsk_gl_driver_begin_frame            (GskGLDriver         *s
 void                gsk_gl_driver_end_frame              (GskGLDriver         *self);
 void                gsk_gl_driver_after_frame            (GskGLDriver         *self);
 GdkTexture        * gsk_gl_driver_create_gdk_texture     (GskGLDriver         *self,
-                                                          guint                texture_id);
+                                                          guint                texture_id,
+                                                          GdkMemoryFormat      format);
 void                gsk_gl_driver_cache_texture          (GskGLDriver         *self,
                                                           const GskTextureKey *key,
                                                           guint                texture_id);
@@ -170,17 +175,20 @@ GskGLTexture      * gsk_gl_driver_mark_texture_permanent (GskGLDriver         *s
 void                gsk_gl_driver_add_texture_slices     (GskGLDriver         *self,
                                                           GdkTexture          *texture,
                                                           gboolean             ensure_mipmap,
-                                                          guint                min_cols,
-                                                          guint                min_rows,
                                                           GskGLTextureSlice  **out_slices,
                                                           guint               *out_n_slices);
 GskGLProgram      * gsk_gl_driver_lookup_shader          (GskGLDriver         *self,
                                                           GskGLShader         *shader,
                                                           GError             **error);
 
-#ifdef G_ENABLE_DEBUG
+#if 0
+void                gsk_gl_driver_save_texture_to_png    (GskGLDriver         *self,
+                                                          int                  texture_id,
+                                                          int                  width,
+                                                          int                  height,
+                                                          const char          *filename);
 void                gsk_gl_driver_save_atlases_to_png    (GskGLDriver         *self,
-                                                          const char          *directory);
+                                                          const char          *filename);
 #endif
 
 static inline GskGLTexture *
@@ -194,6 +202,7 @@ gsk_gl_driver_get_texture_by_id (GskGLDriver *self,
  * gsk_gl_driver_lookup_texture:
  * @self: a `GskGLDriver`
  * @key: the key for the texture
+ * @has_mipmap: (out): Return location for whether the texture has a mipmap
  *
  * Looks up a texture in the texture cache by @key.
  *
@@ -203,7 +212,8 @@ gsk_gl_driver_get_texture_by_id (GskGLDriver *self,
  */
 static inline guint
 gsk_gl_driver_lookup_texture (GskGLDriver         *self,
-                              const GskTextureKey *key)
+                              const GskTextureKey *key,
+                              gboolean            *has_mipmap)
 {
   gpointer id;
 
@@ -213,6 +223,9 @@ gsk_gl_driver_lookup_texture (GskGLDriver         *self,
 
       if (texture != NULL)
         texture->last_used_in_frame = self->current_frame_id;
+
+       if (has_mipmap)
+         *has_mipmap = texture ? texture->has_mipmap : FALSE;
 
       return GPOINTER_TO_UINT (id);
     }
@@ -224,8 +237,6 @@ static inline void
 gsk_gl_driver_slice_texture (GskGLDriver        *self,
                              GdkTexture         *texture,
                              gboolean            ensure_mipmap,
-                             guint               min_cols,
-                             guint               min_rows,
                              GskGLTextureSlice **out_slices,
                              guint              *out_n_slices)
 {
@@ -234,17 +245,15 @@ gsk_gl_driver_slice_texture (GskGLDriver        *self,
   t = gdk_texture_get_render_data (texture, self);
 
   if (t && t->slices &&
-      (t->has_mipmap || !ensure_mipmap) &&
-      min_cols == 0 && min_rows == 0)
+      (t->has_mipmap || !ensure_mipmap))
     {
       *out_slices = t->slices;
       *out_n_slices = t->n_slices;
       return;
     }
 
-  gsk_gl_driver_add_texture_slices (self, texture, ensure_mipmap, min_cols, min_rows, out_slices, out_n_slices);
+  gsk_gl_driver_add_texture_slices (self, texture, ensure_mipmap, out_slices, out_n_slices);
 }
 
 G_END_DECLS
 
-#endif /* __GSK_GL_DRIVER_PRIVATE_H__ */

@@ -139,7 +139,6 @@ static GSourceFuncs event_funcs = {
 
 static GdkSurface *mouse_window = NULL;
 static GdkSurface *mouse_window_ignored_leave = NULL;
-static int current_x, current_y;
 static int current_root_x, current_root_y;
 
 static UINT got_gdk_events_message;
@@ -413,8 +412,7 @@ set_up_low_level_keyboard_hook (void)
 
   hook_handle = SetWindowsHookEx (WH_KEYBOARD_LL,
                                   (HOOKPROC) low_level_keyboard_proc,
-                                  _gdk_dll_hinstance,
-                                  0);
+                                  this_module (), 0);
 
   if (hook_handle != NULL)
     keyboard_hook = hook_handle;
@@ -716,8 +714,6 @@ build_pointer_event_state (MSG *msg)
   return state;
 }
 
-#ifdef G_ENABLE_DEBUG
-
 static void
 print_event_state (guint state)
 {
@@ -861,8 +857,6 @@ decode_key_lparam (LPARAM lParam)
 
   return buf;
 }
-
-#endif
 
 static void
 fixup_event (GdkEvent *event)
@@ -1523,14 +1517,15 @@ generate_button_event (GdkEventType      type,
   GdkEvent *event;
   GdkDeviceManagerWin32 *device_manager;
   GdkWin32Surface *impl = GDK_WIN32_SURFACE (window);
+  double x, y;
 
   if (_gdk_input_ignore_core > 0)
     return;
 
   device_manager = GDK_DEVICE_MANAGER_WIN32 (_gdk_device_manager);
 
-  current_x = (gint16) GET_X_LPARAM (msg->lParam) / impl->surface_scale;
-  current_y = (gint16) GET_Y_LPARAM (msg->lParam) / impl->surface_scale;
+  x = (double) GET_X_LPARAM (msg->lParam) / impl->surface_scale;
+  y = (double) GET_Y_LPARAM (msg->lParam) / impl->surface_scale;
 
   _gdk_device_virtual_set_active (_gdk_device_manager->core_pointer,
                                   _gdk_device_manager->system_pointer);
@@ -1542,10 +1537,10 @@ generate_button_event (GdkEventType      type,
                                 _gdk_win32_get_next_tick (msg->time),
                                 build_pointer_event_state (msg),
                                 button,
-                                current_x,
-                                current_y,
+                                x,
+                                y,
                                 NULL);
-                                
+
   _gdk_win32_append_event (event);
 }
 
@@ -2351,19 +2346,19 @@ gdk_event_translate (MSG *msg,
        * sends WM_MOUSEMOVE messages after a new window is shown under
        * the mouse, even if the mouse hasn't moved. This disturbs gtk.
        */
-      if (msg->pt.x / impl->surface_scale == current_root_x &&
-          msg->pt.y / impl->surface_scale == current_root_y)
+      if (msg->pt.x == current_root_x &&
+          msg->pt.y == current_root_y)
         break;
 
-      current_root_x = msg->pt.x / impl->surface_scale;
-      current_root_y = msg->pt.y / impl->surface_scale;
+      current_root_x = msg->pt.x;
+      current_root_y = msg->pt.y;
 
       if (impl->drag_move_resize_context.op != GDK_WIN32_DRAGOP_NONE)
-        gdk_win32_surface_do_move_resize_drag (window, current_root_x, current_root_y);
+        gdk_win32_surface_do_move_resize_drag (window, msg->pt.x, msg->pt.y);
       else if (_gdk_input_ignore_core == 0)
 	{
-	  current_x = (gint16) GET_X_LPARAM (msg->lParam) / impl->surface_scale;
-	  current_y = (gint16) GET_Y_LPARAM (msg->lParam) / impl->surface_scale;
+          double x = (double) GET_X_LPARAM (msg->lParam) / impl->surface_scale;
+          double y = (double) GET_Y_LPARAM (msg->lParam) / impl->surface_scale;
 
           _gdk_device_virtual_set_active (_gdk_device_manager->core_pointer,
                                           _gdk_device_manager->system_pointer);
@@ -2373,8 +2368,8 @@ gdk_event_translate (MSG *msg,
                                         NULL,
                                         _gdk_win32_get_next_tick (msg->time),
 	                                build_pointer_event_state (msg),
-                                        current_x,
-                                        current_y,
+                                        x,
+                                        y,
                                         NULL);
 
 	  _gdk_win32_append_event (event);
@@ -2735,6 +2730,10 @@ gdk_event_translate (MSG *msg,
       if (GDK_IS_DRAG_SURFACE (window) ||
           _gdk_modal_blocked (window))
         {
+          /* Focus the modal window */
+          GdkSurface *modal_window = _gdk_modal_current ();
+          if (modal_window != NULL)
+            SetFocus (GDK_SURFACE_HWND (modal_window));
           *ret_valp = MA_NOACTIVATE;
           return_val = TRUE;
         }
@@ -2745,6 +2744,10 @@ gdk_event_translate (MSG *msg,
       if (GDK_IS_DRAG_SURFACE (window) ||
           _gdk_modal_blocked (window))
         {
+          /* Focus the modal window */
+          GdkSurface *modal_window = _gdk_modal_current ();
+          if (modal_window != NULL)
+            SetFocus (GDK_SURFACE_HWND (modal_window));
           *ret_valp = PA_NOACTIVATE;
           return_val = TRUE;
         }
@@ -2850,7 +2853,10 @@ gdk_event_translate (MSG *msg,
       break;
 
     case WM_SYSCOMMAND:
-      switch (msg->wParam)
+      /* From: https://learn.microsoft.com/en-us/windows/win32/menurc/wm-syscommand?redirectedfrom=MSDN
+       * To obtain the correct result when testing the value of wParam,
+       * an application must combine the value 0xFFF0 with the wParam value by using the bitwise AND operator. */
+      switch (msg->wParam & 0xFFF0)
 	{
 	case SC_MINIMIZE:
 	case SC_RESTORE:
@@ -2926,7 +2932,6 @@ gdk_event_translate (MSG *msg,
       break;
 
     case WM_WINDOWPOSCHANGING:
-#ifdef G_ENABLE_DEBUG
       {
         char buf[256];
         GDK_NOTE (EVENTS, (windowpos = (WINDOWPOS *) msg->lParam,
@@ -2941,7 +2946,6 @@ gdk_event_translate (MSG *msg,
                                     windowpos->cx, windowpos->cy, windowpos->x, windowpos->y,
                                     GetNextWindow (msg->hwnd, GW_HWNDPREV))));
       }
-#endif
 
       if (GDK_SURFACE_IS_MAPPED (window))
         {
@@ -2957,6 +2961,14 @@ gdk_event_translate (MSG *msg,
                   windowpos = (WINDOWPOS *) msg->lParam;
                   windowpos->cx = our_mmi.ptMaxSize.x;
                   windowpos->cy = our_mmi.ptMaxSize.y;
+
+                  if (!_gdk_win32_surface_lacks_wm_decorations (window) &&
+                      !(windowpos->flags & SWP_NOCLIENTSIZE) &&
+                      window->width == impl->next_layout.configured_width &&
+                      window->height == impl->next_layout.configured_height)
+                    {
+                      impl->inhibit_configure = TRUE;
+                    }
                 }
 
               impl->maximizing = FALSE;
@@ -2968,7 +2980,6 @@ gdk_event_translate (MSG *msg,
     case WM_WINDOWPOSCHANGED:
       windowpos = (WINDOWPOS *) msg->lParam;
 
-#ifdef G_ENABLE_DEBUG
       {
         char buf[256];
         GDK_NOTE (EVENTS, g_print (" %s %s %dx%d@%+d%+d",
@@ -2981,7 +2992,6 @@ gdk_event_translate (MSG *msg,
                                         buf))))),
                                    windowpos->cx, windowpos->cy, windowpos->x, windowpos->y));
       }
-#endif
 
       impl = GDK_WIN32_SURFACE (window);
 
@@ -3007,9 +3017,11 @@ gdk_event_translate (MSG *msg,
 	  unset_bits = 0;
 
 	  if (IsIconic (msg->hwnd))
-	    set_bits |= GDK_TOPLEVEL_STATE_MINIMIZED;
+	    set_bits |= (GDK_TOPLEVEL_STATE_MINIMIZED |
+                         GDK_TOPLEVEL_STATE_SUSPENDED);
 	  else
-	    unset_bits |= GDK_TOPLEVEL_STATE_MINIMIZED;
+	    unset_bits |= (GDK_TOPLEVEL_STATE_MINIMIZED |
+                           GDK_TOPLEVEL_STATE_SUSPENDED);
 
 	  if (IsZoomed (msg->hwnd))
 	    set_bits |= GDK_TOPLEVEL_STATE_MAXIMIZED;
@@ -3017,7 +3029,7 @@ gdk_event_translate (MSG *msg,
 	    unset_bits |= GDK_TOPLEVEL_STATE_MAXIMIZED;
 
       /*
-       * If we are minizing, pause all surface layout computations, and re-start the
+       * If we are minimizing, pause all surface layout computations, and re-start the
        * computation once we are coming out of a minimized state
        */
       if (!(old_state & GDK_TOPLEVEL_STATE_MINIMIZED) && set_bits & GDK_TOPLEVEL_STATE_MINIMIZED)
@@ -3033,7 +3045,7 @@ gdk_event_translate (MSG *msg,
 
 	  /* Whenever one window changes iconified state we need to also
 	   * change the iconified state in all transient related windows,
-	   * as windows doesn't give icons for transient childrens.
+	   * as windows doesn't give icons for transient children.
 	   */
 	  if ((old_state & GDK_TOPLEVEL_STATE_MINIMIZED) !=
 	      (new_state & GDK_TOPLEVEL_STATE_MINIMIZED))

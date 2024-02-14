@@ -15,14 +15,13 @@
  * License along with this library. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef __GTK_CSS_PROVIDER_PRIVATE_H__
-#define __GTK_CSS_PROVIDER_PRIVATE_H__
+#pragma once
 
 #include "gtkcssprovider.h"
 
 G_BEGIN_DECLS
 
-char *_gtk_get_theme_dir (void);
+char *_gtk_get_theme_dir (void) G_GNUC_MALLOC;
 
 const char *_gtk_css_provider_get_theme_dir (GtkCssProvider *provider);
 
@@ -30,4 +29,3 @@ void   gtk_css_provider_set_keep_css_sections (void);
 
 G_END_DECLS
 
-#endif /* __GTK_CSS_PROVIDER_PRIVATE_H__ */

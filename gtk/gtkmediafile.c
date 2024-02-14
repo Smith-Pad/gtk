@@ -37,7 +37,7 @@
  * GTK provides a GIO extension point for `GtkMediaFile` implementations
  * to allow for external implementations using various media frameworks.
  *
- * GTK itself includes implementations using GStreamer and ffmpeg.
+ * GTK itself includes an implementation using GStreamer.
  */
 
 typedef struct _GtkMediaFilePrivate GtkMediaFilePrivate;
@@ -643,4 +643,8 @@ gtk_media_file_extension_init (void)
                    g_type_name (g_io_extension_get_type (ext)));
         }
     }
+
+  /* If the env var is given, check at startup that things actually work */
+  if (g_getenv ("GTK_MEDIA"))
+    gtk_media_file_get_extension ();
 }

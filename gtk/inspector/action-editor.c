@@ -38,6 +38,7 @@ struct _GtkInspectorActionEditor
   gboolean enabled;
   const GVariantType *parameter_type;
   GVariantType *state_type;
+  GVariant *state;
   GtkWidget *activate_button;
   GtkWidget *parameter_entry;
   GtkWidget *state_entry;
@@ -53,8 +54,7 @@ enum
 {
   PROP_0,
   PROP_OWNER,
-  PROP_NAME,
-  PROP_SIZEGROUP
+  PROP_NAME
 };
 
 G_DEFINE_TYPE (GtkInspectorActionEditor, gtk_inspector_action_editor, GTK_TYPE_WIDGET)
@@ -73,6 +73,7 @@ activate_action (GtkWidget                *button,
     g_action_group_activate_action (G_ACTION_GROUP (r->owner), r->name, parameter);
   else if (GTK_IS_ACTION_MUXER (r->owner))
     gtk_action_muxer_activate_action (GTK_ACTION_MUXER (r->owner), r->name, parameter);
+
   update_widgets (r);
 }
 
@@ -97,13 +98,22 @@ state_changed (GtkWidget *editor,
   GVariant *value;
 
   value = gtk_inspector_variant_editor_get_value (editor);
-  if (value)
+  if (!value)
+    return;
+
+  g_variant_ref_sink (value);
+  if (g_variant_equal (value, r->state))
     {
-      if (G_IS_ACTION_GROUP (r->owner))
-        g_action_group_change_action_state (G_ACTION_GROUP (r->owner), r->name, value);
-      else if (GTK_IS_ACTION_MUXER (r->owner))
-        gtk_action_muxer_change_action_state (GTK_ACTION_MUXER (r->owner), r->name, value);
+      g_variant_unref (value);
+      return;
     }
+
+  if (G_IS_ACTION_GROUP (r->owner))
+    g_action_group_change_action_state (G_ACTION_GROUP (r->owner), r->name, value);
+  else if (GTK_IS_ACTION_MUXER (r->owner))
+    gtk_action_muxer_change_action_state (GTK_ACTION_MUXER (r->owner), r->name, value);
+
+  g_variant_unref (value);
 }
 
 static void
@@ -141,62 +151,38 @@ gtk_inspector_action_editor_init (GtkInspectorActionEditor *r)
 }
 
 static void
-update_enabled (GtkInspectorActionEditor *r,
-                gboolean                  enabled)
-{
-  r->enabled = enabled;
-  if (r->parameter_entry)
-    {
-      gtk_widget_set_sensitive (r->parameter_entry, enabled);
-      parameter_changed (r->parameter_entry, r);
-    }
-  if (r->activate_button)
-    gtk_widget_set_sensitive (r->activate_button, enabled);
-}
-
-static void
-action_enabled_changed_cb (GActionGroup             *group,
-                           const char               *action_name,
-                           gboolean                  enabled,
-                           GtkInspectorActionEditor *r)
-{
-  if (g_str_equal (action_name, r->name))
-    update_enabled (r, enabled);
-}
-
-static void
-update_state (GtkInspectorActionEditor *r,
-              GVariant                 *state)
-{
-  if (r->state_entry)
-    gtk_inspector_variant_editor_set_value (r->state_entry, state);
-}
-
-static void
-action_state_changed_cb (GActionGroup             *group,
-                         const char               *action_name,
-                         GVariant                 *state,
-                         GtkInspectorActionEditor *r)
-{
-  if (g_str_equal (action_name, r->name))
-    update_state (r, state);
-}
-
-static void
 update_widgets (GtkInspectorActionEditor *r)
 {
-  GVariant *state = NULL;
+  g_clear_pointer (&r->state, g_variant_unref);
 
   if (G_IS_ACTION_GROUP (r->owner))
-    g_action_group_query_action (G_ACTION_GROUP (r->owner), r->name,
-                                 &r->enabled, &r->parameter_type, NULL, NULL,
-                                 &state);
+    {
+      if (!g_action_group_query_action (G_ACTION_GROUP (r->owner), r->name,
+                                        &r->enabled, &r->parameter_type, NULL, NULL,
+                                        &r->state))
+        {
+          r->enabled = FALSE;
+          r->parameter_type = NULL;
+          r->state = NULL;
+        }
+    }
   else if (GTK_IS_ACTION_MUXER (r->owner))
-    gtk_action_muxer_query_action (GTK_ACTION_MUXER (r->owner), r->name,
-                                   &r->enabled, &r->parameter_type, NULL, NULL,
-                                   &state);
+    {
+      if (!gtk_action_muxer_query_action (GTK_ACTION_MUXER (r->owner), r->name,
+                                          &r->enabled, &r->parameter_type, NULL, NULL,
+                                          &r->state))
+        {
+          r->enabled = FALSE;
+          r->parameter_type = NULL;
+          r->state = NULL;
+        }
+    }
   else
-    state = NULL;
+    {
+      r->enabled = FALSE;
+      r->parameter_type = NULL;
+      r->state = NULL;
+    }
 
   gtk_widget_set_sensitive (r->activate_button, r->enabled);
   gtk_widget_set_sensitive (r->parameter_entry, r->enabled);
@@ -204,21 +190,13 @@ update_widgets (GtkInspectorActionEditor *r)
   if (r->parameter_type)
     gtk_inspector_variant_editor_set_type (r->parameter_entry, r->parameter_type);
 
-  gtk_widget_set_visible (r->state_editor, state != NULL);
-  if (state)
+  gtk_widget_set_visible (r->state_editor, r->state != NULL);
+  if (r->state)
     {
       if (r->state_type)
         g_variant_type_free (r->state_type);
-      r->state_type = g_variant_type_copy (g_variant_get_type (state));
-      gtk_inspector_variant_editor_set_value (r->state_entry, state);
-    }
-
-  if (G_IS_ACTION_GROUP (r->owner))
-    {
-      g_signal_connect (r->owner, "action-enabled-changed",
-                        G_CALLBACK (action_enabled_changed_cb), r);
-      g_signal_connect (r->owner, "action-state-changed",
-                        G_CALLBACK (action_state_changed_cb), r);
+      r->state_type = g_variant_type_copy (g_variant_get_type (r->state));
+      gtk_inspector_variant_editor_set_value (r->state_entry, r->state);
     }
 }
 
@@ -228,17 +206,12 @@ dispose (GObject *object)
   GtkInspectorActionEditor *r = GTK_INSPECTOR_ACTION_EDITOR (object);
   GtkWidget *child;
 
-  g_free (r->name);
-  if (r->state_type)
-    g_variant_type_free (r->state_type);
-  if (r->owner)
-    {
-      g_signal_handlers_disconnect_by_func (r->owner, action_enabled_changed_cb, r);
-      g_signal_handlers_disconnect_by_func (r->owner, action_state_changed_cb, r);
-    }
-
   while ((child = gtk_widget_get_first_child (GTK_WIDGET (r))))
     gtk_widget_unparent (child);
+
+  g_clear_pointer (&r->name, g_free);
+  g_clear_pointer (&r->state_type, g_variant_type_free);
+  g_clear_pointer (&r->state, g_variant_unref);
 
   G_OBJECT_CLASS (gtk_inspector_action_editor_parent_class)->dispose (object);
 }
@@ -278,12 +251,10 @@ set_property (GObject      *object,
   switch (param_id)
     {
     case PROP_OWNER:
-      if (r->owner)
-        {
-          g_signal_handlers_disconnect_by_func (r->owner, action_enabled_changed_cb, r);
-          g_signal_handlers_disconnect_by_func (r->owner, action_state_changed_cb, r);
-        }
       r->owner = g_value_get_object (value);
+      g_assert (r->owner == NULL ||
+                G_IS_ACTION_GROUP (r->owner) ||
+                GTK_IS_ACTION_MUXER (r->owner));
       break;
 
     case PROP_NAME:
@@ -334,10 +305,7 @@ gtk_inspector_action_editor_set (GtkInspectorActionEditor *self,
 }
 
 void
-gtk_inspector_action_editor_update (GtkInspectorActionEditor *r,
-                                    gboolean                  enabled,
-                                    GVariant                 *state)
+gtk_inspector_action_editor_update (GtkInspectorActionEditor *self)
 {
-  update_enabled (r, enabled);
-  update_state (r, state);
+  update_widgets (self);
 }

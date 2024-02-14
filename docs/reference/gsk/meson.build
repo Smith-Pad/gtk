@@ -1,4 +1,8 @@
-if get_option('gtk_doc')
+gsk_expand_content_md_files = [
+  'paths.md',
+]
+
+if get_option('documentation')
   gsk4_toml = configure_file(
     input: 'gsk4.toml.in',
     output: 'gsk4.toml',
@@ -21,7 +25,7 @@ if get_option('gtk_doc')
       '@INPUT1@',
     ],
     depends: [ gdk_gir[0] ],
-    depend_files: [ expand_content_md_files ],
+    depend_files: [ gsk_expand_content_md_files ],
     build_by_default: true,
     install: true,
     install_dir: docs_dir,

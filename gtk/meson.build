@@ -1,6 +1,7 @@
 subdir('a11y')
 subdir('deprecated')
 subdir('inspector')
+subdir('print')
 
 gtk_cargs = [
   '-DGTK_COMPILATION',
@@ -15,7 +16,7 @@ gtk_cargs = [
 # introspected
 gtk_private_sources = files([
   'fnmatch.c',
-  'gdkpixbufutils.c',
+  'gdktextureutils.c',
   'gsettings-mapping.c',
   'gtkaccessibleattributeset.c',
   'gtkaccessiblevalue.c',
@@ -38,9 +39,8 @@ gtk_private_sources = files([
   'gtkcolorpickershell.c',
   'gtkcolorscale.c',
   'gtkcolorswatch.c',
-  'gtkcolumnlistitemfactory.c',
-  'gtkcolumnviewcell.c',
-  'gtkcolumnviewlayout.c',
+  'gtkcolumnviewcellwidget.c',
+  'gtkcolumnviewrowwidget.c',
   'gtkcolumnviewtitle.c',
   'gtkconstraintexpression.c',
   'gtkconstraintsolver.c',
@@ -129,7 +129,6 @@ gtk_private_sources = files([
   'gtkplacesviewrow.c',
   'gtkpointerfocus.c',
   'gtkpopovercontent.c',
-  'gtkprintutils.c',
   'gtkprivate.c',
   'gtkprogresstracker.c',
   'gtkrbtree.c',
@@ -188,7 +187,9 @@ gtk_public_sources = files([
   'gtkcolordialogbutton.c',
   'gtkcolorutils.c',
   'gtkcolumnview.c',
+  'gtkcolumnviewcell.c',
   'gtkcolumnviewcolumn.c',
+  'gtkcolumnviewrow.c',
   'gtkcolumnviewsorter.c',
   'gtkcomposetable.c',
   'gtkconstraintguide.c',
@@ -250,6 +251,7 @@ gtk_public_sources = files([
   'gtkgestureswipe.c',
   'gtkgesturezoom.c',
   'gtkglarea.c',
+  'gtkgraphicsoffload.c',
   'gtkgrid.c',
   'gtkgridlayout.c',
   'gtkgridview.c',
@@ -269,7 +271,12 @@ gtk_public_sources = files([
   'gtklistbase.c',
   'gtklinkbutton.c',
   'gtklistbox.c',
+  'gtklistfactorywidget.c',
+  'gtklistheader.c',
+  'gtklistheaderbase.c',
+  'gtklistheaderwidget.c',
   'gtklistitem.c',
+  'gtklistitembase.c',
   'gtklistitemfactory.c',
   'gtklistitemmanager.c',
   'gtklistitemwidget.c',
@@ -297,19 +304,14 @@ gtk_public_sources = files([
   'gtkoverlay.c',
   'gtkoverlaylayout.c',
   'gtkpadcontroller.c',
-  'gtkpagesetup.c',
   'gtkpaned.c',
-  'gtkpapersize.c',
   'gtkpasswordentry.c',
   'gtkpasswordentrybuffer.c',
   'gtkpicture.c',
   'gtkpopover.c',
   'gtkpopovermenu.c',
   'gtkpopovermenubar.c',
-  'gtkprintcontext.c',
-  'gtkprintoperation.c',
-  'gtkprintoperationpreview.c',
-  'gtkprintsettings.c',
+  'gtkprintdialog.c',
   'gtkprogressbar.c',
   'gtkpropertylookuplistmodel.c',
   'gtkrange.c',
@@ -327,9 +329,11 @@ gtk_public_sources = files([
   'gtkscalebutton.c',
   'gtkscrollable.c',
   'gtkscrollbar.c',
+  'gtkscrollinfo.c',
   'gtkscrolledwindow.c',
   'gtksearchbar.c',
   'gtksearchentry.c',
+  'gtksectionmodel.c',
   'gtkselectionfiltermodel.c',
   'gtkselectionmodel.c',
   'gtkseparator.c',
@@ -400,6 +404,8 @@ gtk_public_sources = files([
   'gtkwindowhandle.c',
 ])
 
+gtk_public_sources += gtk_print_sources
+
 gtk_private_type_headers = files([
   'gtkcsstypesprivate.h',
   'gtktexthandleprivate.h',
@@ -439,7 +445,9 @@ gtk_public_headers = files([
   'gtkcolordialogbutton.h',
   'gtkcolorutils.h',
   'gtkcolumnview.h',
+  'gtkcolumnviewcell.h',
   'gtkcolumnviewcolumn.h',
+  'gtkcolumnviewrow.h',
   'gtkcolumnviewsorter.h',
   'gtkconstraintguide.h',
   'gtkconstraintlayout.h',
@@ -495,6 +503,7 @@ gtk_public_headers = files([
   'gtkgestureswipe.h',
   'gtkgesturezoom.h',
   'gtkglarea.h',
+  'gtkgraphicsoffload.h',
   'gtkgrid.h',
   'gtkgridlayout.h',
   'gtkgridview.h',
@@ -513,6 +522,7 @@ gtk_public_headers = files([
   'gtklinkbutton.h',
   'gtklistbase.h',
   'gtklistbox.h',
+  'gtklistheader.h',
   'gtklistitem.h',
   'gtklistitemfactory.h',
   'gtklistview.h',
@@ -535,19 +545,14 @@ gtk_public_headers = files([
   'gtkoverlay.h',
   'gtkoverlaylayout.h',
   'gtkpadcontroller.h',
-  'gtkpagesetup.h',
   'gtkpaned.h',
-  'gtkpapersize.h',
   'gtkpasswordentry.h',
   'gtkpasswordentrybuffer.h',
   'gtkpicture.h',
   'gtkpopover.h',
   'gtkpopovermenu.h',
   'gtkpopovermenubar.h',
-  'gtkprintcontext.h',
-  'gtkprintoperation.h',
-  'gtkprintoperationpreview.h',
-  'gtkprintsettings.h',
+  'gtkprintdialog.h',
   'gtkprogressbar.h',
   'gtkrange.h',
   'gtkrecentmanager.h',
@@ -557,9 +562,11 @@ gtk_public_headers = files([
   'gtkscalebutton.h',
   'gtkscrollable.h',
   'gtkscrollbar.h',
+  'gtkscrollinfo.h',
   'gtkscrolledwindow.h',
   'gtksearchbar.h',
   'gtksearchentry.h',
+  'gtksectionmodel.h',
   'gtkselectionfiltermodel.h',
   'gtkselectionmodel.h',
   'gtkseparator.h',
@@ -623,6 +630,7 @@ gtk_public_headers = files([
 
 install_headers(gtk_public_headers, subdir: 'gtk-4.0/gtk/')
 install_headers(gtk_deprecated_headers, subdir: 'gtk-4.0/gtk/deprecated')
+install_headers(gtk_print_headers, subdir: 'gtk-4.0/gtk/print')
 
 gtk_sources = gtk_public_sources + gtk_private_sources
 
@@ -673,52 +681,24 @@ if os_unix and tracker3_dep.found()
   gtk_sources += 'gtksearchenginetracker3.c'
 endif
 
+gtk_unix_print_main_header = [
+  'gtkunixprint.h'
+]
+
 if os_unix
-  gtk_unix_print_headers = [
-    'gtkpagesetupunixdialog.h',
-    'gtkprintunixdialog.h',
-    'gtkprinter.h',
-    'gtkprintjob.h',
-    'gtkunixprint-autocleanups.h',
-    'gtkunixprint.h',
-  ]
-  install_headers(gtk_unix_print_headers, subdir: 'gtk-4.0/unix-print/gtk')
-
-  gtk_unix_print_sources = files([
-    'gtkcustompaperunixdialog.c',
-    'gtkpagesetupunixdialog.c',
-    'gtkprintbackend.c',
-    'gtkprinter.c',
-    'gtkprinteroption.c',
-    'gtkprinteroptionset.c',
-    'gtkprinteroptionwidget.c',
-    'gtkprintjob.c',
-    'gtkprintoperation-unix.c',
-    'gtkprintoperation-portal.c',
-    'gtkprintunixdialog.c',
-  ])
-
+  install_headers(gtk_unix_print_main_header, subdir: 'gtk-4.0/unix-print/gtk')
+  install_headers(gtk_unix_print_headers, subdir: 'gtk-4.0/unix-print/gtk/print')
   gtk_sources += gtk_unix_print_sources
 endif
 
 if os_win32
-  gtk_win32_print_headers = []
-  gtk_win32_print_sources = files([
-    'gtkprint-win32.c',
-    'gtkprintoperation-win32.c',
-    'gtkfilechoosernativewin32.c',
-    'gtkwin32.c',
-  ])
-
   gtk_sources += gtk_win32_print_sources
   gtk_sources += [
     'gtkcolorpickerwin32.c',
-    'gtkimcontextime.c'
+    'gtkimcontextime.c',
+    'gtkfilechoosernativewin32.c',
+    'gtkwin32.c',
   ]
-
-  if cc.has_header_symbol('windows.h', 'IPrintDialogCallback')
-    cdata.set('HAVE_IPRINTDIALOGCALLBACK', 1)
-  endif
 endif
 
 if x11_enabled
@@ -784,17 +764,7 @@ if not fs.exists('theme/Default/Default-light.css')
 endif
 
 
-objcopy_supports_add_symbol = false
-objcopy = find_program('objcopy', required : false)
-if objcopy.found()
-  objcopy_supports_add_symbol = run_command(objcopy, '--help', check: false).stdout().contains('--add-symbol')
-endif
-
-ld = find_program('ld', required : false)
-
-if not meson.is_cross_build() and build_machine.cpu_family() == 'x86_64' and build_machine.system() == 'linux' and objcopy.found() and objcopy_supports_add_symbol and ld.found()
-  glib_compile_resources = find_program('glib-compile-resources')
-
+if can_use_objcopy_for_resources
   # Create the resource blob
   gtk_gresource = custom_target('gtk.gresource',
       input : gtk_gresources_xml,
@@ -887,20 +857,27 @@ else
 endif
 
 foreach lang : [
+    'bn',
     'de',
     'da',
     'fr',
     'es',
+    'et',
+    'fi',
+    'hi',
     'hu',
     'it',
+    'ja',
     'ko',
     'lt',
     'ms',
+    'nb',
     'nl',
     'pl',
     'pt',
     'ru',
     'sv',
+    'th',
     'uk',
     'zh'
   ]
@@ -948,7 +925,7 @@ gtkmarshalers = gnome.genmarshal('gtkmarshalers',
 gtkmarshal_h = gtkmarshalers[1]
 
 gtktypebuiltins = gnome.mkenums('gtktypebuiltins',
-  sources: gtk_public_headers + gtk_deprecated_headers,
+  sources: gtk_public_headers + gtk_deprecated_headers + gtk_print_headers,
   c_template: 'gtktypebuiltins.c.template',
   h_template: 'gtktypebuiltins.h.template',
   install_dir: gtk_includedir / 'gtk-4.0/gtk',
@@ -993,6 +970,16 @@ else
   )
 endif
 
+gtkconfig_cdata = configuration_data()
+gtkconfig_cdata.set('GTK_ACCESSIBILITY_ATSPI', gtk_a11y_backends.contains('atspi'))
+
+gtkconfig = configure_file(
+  input: 'gtkconfig.h.meson',
+  output: 'gtkconfig.h',
+  configuration: gtkconfig_cdata,
+  install_dir: gtk_includedir / 'gtk-4.0/gtk',
+)
+
 gtkversion_cdata = configuration_data()
 gtkversion_cdata.set('GTK_MAJOR_VERSION', gtk_major_version)
 gtkversion_cdata.set('GTK_MINOR_VERSION', gtk_minor_version)
@@ -1003,7 +990,9 @@ gtkversion_cdata.set('GTK_VERSION', gtk_version)
 gtkversion_cdata.set('GTK_API_VERSION', gtk_api_version)
 
 if host_machine.system() == 'windows'
-  gtkversion_cdata.set('EXE_MANIFEST_ARCHITECTURE', '*')
+  v = gtk_binary_version.split('.')
+  gtk_manifest_version = '.'.join(v.get(0, '0'), v.get(1, '0'), v.get(2, '0'), v.get(3, '0'))
+  gtkversion_cdata.set('GTK_MANIFEST_VERSION', gtk_manifest_version)
 endif
 
 gtkversion = configure_file(input: 'gtkversion.h.in',
@@ -1017,6 +1006,7 @@ gtk_gen_headers = [
   gtkmarshal_h,
   gtktypebuiltins_h,
   gtkprivatetypebuiltins_h,
+  gtkconfig,
   gtkversion,
 ]
 
@@ -1049,6 +1039,7 @@ gtk_deps = [
   epoxy_dep,
   libm,
   graphene_dep,
+  profile_conf_h,
 ]
 
 if x11_enabled
@@ -1086,8 +1077,8 @@ if win32_enabled
     configuration: gtkversion_cdata,
   )
 
-  win32_manifest = configure_file(input: 'libgtk4.manifest.in',
-    output: 'libgtk4.manifest',
+  win32_manifest = configure_file(input: 'libgtk.manifest.in',
+    output: 'libgtk.manifest',
     configuration: gtkversion_cdata,
   )
 
@@ -1107,7 +1098,6 @@ endif
 if macos_enabled
   gtk_macos_frameworks = [
     'AppKit',
-    'Foundation',
   ]
   gtk_deps += [dependency('appleframeworks', modules: gtk_macos_frameworks)]
 endif
@@ -1168,10 +1158,11 @@ libgtk = shared_library('gtk-4',
   soversion: gtk_soversion,
   version: gtk_library_version,
   darwin_versions: darwin_versions,
+  gnu_symbol_visibility: 'hidden',
   install: true,
 )
 
-gtk_dep_sources = [gtkversion, gtktypebuiltins_h]
+gtk_dep_sources = [gtkconfig, gtkversion, gtktypebuiltins_h]
 
 # Introspection
 if build_gir
@@ -1183,7 +1174,7 @@ if build_gir
   gdk_gir_inc = [ 'cairo-1.0', 'Gio-2.0', 'GdkPixbuf-2.0', 'Pango-1.0', 'PangoCairo-1.0' ]
 
   gdk_gir = gnome.generate_gir(libgtk,
-    sources: gdk_public_headers + gdk_public_sources + [ gdkenum_h ],
+    sources: gdk_public_headers + gdk_deprecated_headers + gdk_public_sources + gdk_deprecated_sources + [ gdkenum_h ],
     namespace: 'Gdk',
     nsversion: gtk_api_version,
     identifier_prefix: 'Gdk',
@@ -1273,16 +1264,18 @@ if build_gir
   gtk_introspection_sources = [
     gtk_public_headers,
     gtk_public_sources,
+    gtk_print_headers,
     gtk_css_public_headers,
     gtk_css_public_sources,
     gtk_deprecated_headers,
     gtk_deprecated_sources,
     gtktypebuiltins_h,
     gtkversion,
+    gtkconfig,
   ]
 
   if os_unix
-    gtk_introspection_sources += [ gtk_unix_print_headers, gtk_unix_print_sources ]
+    gtk_introspection_sources += [ gtk_unix_print_headers + gtk_unix_print_main_header, gtk_unix_print_sources ]
   endif
 
   if os_win32

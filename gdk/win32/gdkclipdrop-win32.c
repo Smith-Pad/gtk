@@ -28,7 +28,7 @@ GTK has two clipboards - normal clipboard and primary clipboard
 Primary clipboard is only handled
 internally by GTK (it's not portable to Windows).
 
-("C:" means clipboard client (requestor), "S:" means clipboard server (provider))
+("C:" means clipboard client (requester), "S:" means clipboard server (provider))
 ("transmute" here means "change the format of some data"; this term is used here
  instead of "convert" to avoid clashing with the old g(t|d)k_selection_convert() APIs,
  which are completely unrelated)
@@ -149,7 +149,7 @@ GTK might also call gdk_clipboard_store_async(), which instructs
 the W32 backend to put the data into the OS clipboard manager by
 sending WM_RENDERALLFORMATS to itself and then handling it normally.
 
-Every time W32 backend gets WM_DRAWCLIPBOARD or WM_CLIPBOARDUPDATE,
+Every time W32 backend gets WM_CLIPBOARDUPDATE,
 it calls GetUpdatedClipboardFormats() and GetClipboardSequenceNumber()
 and caches the results of both. These calls do not require the clipboard
 to be opened.
@@ -245,7 +245,7 @@ When clipboard owner changes, the old owner receives WM_DESTROYCLIPBOARD message
 the clipboard thread schedules a call to gdk_clipboard_claim_remote()
 in the main thread, with an empty list of formats,
 to indicate that the clipboard is now owned by a remote process.
-Later the OS will send WM_DRAWCLIPBOARD or WM_CLIPBOARDUPDATE to indicate
+Later the OS will send WM_CLIPBOARDUPDATE to indicate
 the new clipboard contents (see above).
 
 DND:
@@ -415,8 +415,6 @@ struct _GdkWin32ClipboardThread
    * INVALID_HANDLE_VALUE means that the clipboard is closed.
    */
   HWND         clipboard_opened_for;
-
-  HWND         hwnd_next_viewer;
 
   /* We can't peek the queue or "unpop" queue items,
    * so the items that we can't act upon (yet) got
@@ -1171,7 +1169,7 @@ inner_clipboard_window_procedure (HWND   hwnd,
 
   switch (message)
     {
-    case WM_DESTROY: /* remove us from chain */
+    case WM_DESTROY: /* unregister the clipboard listener */
       {
         if (clipboard_thread_data == NULL)
           {
@@ -1179,26 +1177,8 @@ inner_clipboard_window_procedure (HWND   hwnd,
             return DefWindowProcW (hwnd, message, wparam, lparam);
           }
 
-        ChangeClipboardChain (hwnd, clipboard_thread_data->hwnd_next_viewer);
+        RemoveClipboardFormatListener (hwnd);
         PostQuitMessage (0);
-        return 0;
-      }
-    case WM_CHANGECBCHAIN:
-      {
-        HWND hwndRemove = (HWND) wparam; /* handle of window being removed */
-        HWND hwndNext   = (HWND) lparam; /* handle of next window in chain */
-
-        if (clipboard_thread_data == NULL)
-          {
-            g_warning ("Clipboard thread got an actionable message with no thread data");
-            return DefWindowProcW (hwnd, message, wparam, lparam);
-          }
-
-        if (hwndRemove == clipboard_thread_data->hwnd_next_viewer)
-          clipboard_thread_data->hwnd_next_viewer = hwndNext == hwnd ? NULL : hwndNext;
-        else if (clipboard_thread_data->hwnd_next_viewer != NULL)
-          return SendMessage (clipboard_thread_data->hwnd_next_viewer, message, wparam, lparam);
-
         return 0;
       }
     case WM_DESTROYCLIPBOARD:
@@ -1206,7 +1186,6 @@ inner_clipboard_window_procedure (HWND   hwnd,
         return 0;
       }
     case WM_CLIPBOARDUPDATE:
-    case WM_DRAWCLIPBOARD:
       {
         HWND hwnd_owner;
         HWND hwnd_opener;
@@ -1228,8 +1207,7 @@ inner_clipboard_window_procedure (HWND   hwnd,
 
         GDK_NOTE (DND, g_print (" drawclipboard owner: %p; opener %p ", hwnd_owner, hwnd_opener));
 
-#ifdef G_ENABLE_DEBUG
-        if (_gdk_debug_flags & GDK_DEBUG_DND)
+        if (GDK_DEBUG_CHECK (DND))
           {
             /* FIXME: grab and print clipboard formats without opening the clipboard
             if (clipboard_thread_data->clipboard_opened_for != INVALID_HANDLE_VALUE ||
@@ -1249,7 +1227,6 @@ inner_clipboard_window_procedure (HWND   hwnd,
               }
              */
           }
-#endif
 
         GDK_NOTE (DND, g_print (" \n"));
 
@@ -1271,9 +1248,6 @@ inner_clipboard_window_procedure (HWND   hwnd,
             if (hwnd_owner != clipboard_thread_data->clipboard_window)
               g_idle_add_full (G_PRIORITY_DEFAULT, clipboard_owner_changed, NULL, NULL);
           }
-
-        if (clipboard_thread_data->hwnd_next_viewer != NULL)
-          return SendMessage (clipboard_thread_data->hwnd_next_viewer, message, wparam, lparam);
 
         /* clear error to avoid confusing SetClipboardViewer() return */
         SetLastError (0);
@@ -1382,11 +1356,11 @@ inner_clipboard_window_procedure (HWND   hwnd,
         else if (returned_render->main_thread_data_handle)
           {
             BOOL set_data_succeeded;
-            /* The requestor is holding the clipboard, no
+            /* The requester is holding the clipboard, no
              * OpenClipboard() is required/possible
              */
             GDK_NOTE (DND,
-                      g_print (" SetClipboardData (%s, %p)",
+                      g_print (" SetClipboardData (%s, %p)\n",
                                _gdk_win32_cf_to_string (wparam),
                                returned_render->main_thread_data_handle));
 
@@ -1426,7 +1400,7 @@ _clipboard_window_procedure (HWND   hwnd,
 }
 
 /*
- * Creates a hidden window and adds it to the clipboard chain
+ * Creates a hidden window and add a clipboard listener
  */
 static gboolean
 register_clipboard_notification ()
@@ -1436,7 +1410,7 @@ register_clipboard_notification ()
 
   wclass.lpszClassName = "GdkClipboardNotification";
   wclass.lpfnWndProc = _clipboard_window_procedure;
-  wclass.hInstance = _gdk_dll_hinstance;
+  wclass.hInstance = this_module ();
   wclass.cbWndExtra = sizeof (GdkWin32ClipboardThread *);
 
   klass = RegisterClass (&wclass);
@@ -1446,15 +1420,14 @@ register_clipboard_notification ()
   clipboard_thread_data->clipboard_window = CreateWindow (MAKEINTRESOURCE (klass),
                                                 NULL, WS_POPUP,
                                                 0, 0, 0, 0, NULL, NULL,
-                                                _gdk_dll_hinstance, NULL);
+                                                this_module (), NULL);
 
   if (clipboard_thread_data->clipboard_window == NULL)
     goto failed;
 
   SetLastError (0);
-  clipboard_thread_data->hwnd_next_viewer = SetClipboardViewer (clipboard_thread_data->clipboard_window);
 
-  if (clipboard_thread_data->hwnd_next_viewer == NULL && GetLastError() != NO_ERROR)
+  if (AddClipboardFormatListener (clipboard_thread_data->clipboard_window) == FALSE)
     {
       DestroyWindow (clipboard_thread_data->clipboard_window);
       goto failed;
@@ -1462,16 +1435,11 @@ register_clipboard_notification ()
 
   g_idle_add_full (G_PRIORITY_DEFAULT, clipboard_window_created, (gpointer) clipboard_thread_data->clipboard_window, NULL);
 
-  /* FIXME: http://msdn.microsoft.com/en-us/library/ms649033(v=VS.85).aspx */
-  /* This is only supported by Vista, and not yet by mingw64 */
-  /* if (AddClipboardFormatListener (hwnd) == FALSE) */
-  /*   goto failed; */
-
   return TRUE;
 
 failed:
   g_critical ("Failed to install clipboard viewer");
-  UnregisterClass (MAKEINTRESOURCE (klass), _gdk_dll_hinstance);
+  UnregisterClass (MAKEINTRESOURCE (klass), this_module ());
   return FALSE;
 }
 
@@ -2546,13 +2514,11 @@ transmute_cf_shell_id_list_to_text_uri_list (const guchar    *data,
       ILFree (file_id_full);
     }
 
-  *set_data = (guchar *) result->str;
   if (set_data_length)
     *set_data_length = result->len;
+  *set_data = (guchar *) g_string_free (result, FALSE);
   if (set_data_destroy)
     *set_data_destroy = g_free;
-
-  g_string_free (result, FALSE);
 }
 
 void

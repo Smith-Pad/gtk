@@ -4,6 +4,7 @@ installed_test_datadir = join_paths(gtk_datadir, 'installed-tests', 'gtk-4.0')
 
 common_env = [
   'GIO_USE_VOLUME_MONITOR=unix',
+  'GIO_USE_VFS=local',
   'GSETTINGS_BACKEND=memory',
   'GTK_CSD=1',
   'G_ENABLE_DIAGNOSTIC=0',
@@ -15,14 +16,18 @@ exclude_unstable = ['flaky', 'failing']
 setups = [
   { 'backend': 'x11', 'if': x11_enabled, },
   { 'backend': 'wayland', 'if': wayland_enabled, 'is_default': true, },
-  { 'name': 'wayland_gles',
+  { 'name': 'wayland_gles2',
     'backend': 'wayland', 'if': wayland_enabled,
-    'env': ['GDK_DEBUG=gl-gles,default-settings'], },
+    'env': ['GDK_DEBUG=default-settings',
+            'MESA_GLES_VERSION_OVERRIDE=2.0',
+            'GSK_MAX_TEXTURE_SIZE=1024',
+           ], },
+  { 'name': 'wayland_gl',
+    'backend': 'wayland', 'if': wayland_enabled,
+    'env': ['GDK_DEBUG=gl-prefer-gl,default-settings',
+           ], },
   { 'backend': 'win32', 'if': os_win32 },
   { 'backend': 'broadway', 'if': broadway_enabled, },
-  { 'name': 'wayland_smalltexture',
-    'backend': 'wayland', 'if': wayland_enabled,
-    'env': ['GSK_MAX_TEXTURE_SIZE=1024'], },
   { 'backend': 'win32', 'if': os_win32 },
 ]
 
@@ -34,6 +39,11 @@ foreach setup : setups
 
     if backend != 'broadway'
       exclude += 'gsk-compare-broadway'
+    endif
+
+    if name == 'wayland_gles2'
+      # exclude tests that are failing with the small texture size in this setup
+      exclude += 'wayland_gles2_failing'
     endif
 
     env = common_env + [
@@ -55,7 +65,6 @@ foreach setup : setups
   endif
 endforeach
 
-subdir('performance')
 subdir('gdk')
 subdir('gsk')
 subdir('gtk')
@@ -63,7 +72,11 @@ subdir('css')
 subdir('a11y')
 subdir('tools')
 subdir('reftests')
-
 if build_gir
   subdir('introspection')
+
+  if wayland_enabled
+    subdir('headless')
+  endif
 endif
+

@@ -22,8 +22,7 @@
  * GTK+ at ftp://ftp.gtk.org/pub/gtk/.
  */
 
-#ifndef __GTK_WINDOW_H__
-#define __GTK_WINDOW_H__
+#pragma once
 
 
 #if !defined (__GTK_H_INSIDE__) && !defined (GTK_COMPILATION)
@@ -182,7 +181,7 @@ GList*     gtk_window_list_toplevels (void);
 
 GDK_AVAILABLE_IN_ALL
 void     gtk_window_present            (GtkWindow *window);
-GDK_AVAILABLE_IN_ALL
+GDK_DEPRECATED_IN_4_14_FOR(gtk_window_present)
 void     gtk_window_present_with_time  (GtkWindow *window,
 				        guint32    timestamp);
 GDK_AVAILABLE_IN_ALL
@@ -245,6 +244,9 @@ gboolean gtk_window_is_maximized           (GtkWindow    *window);
 GDK_AVAILABLE_IN_ALL
 gboolean gtk_window_is_fullscreen          (GtkWindow    *window);
 
+GDK_AVAILABLE_IN_4_12
+gboolean gtk_window_is_suspended           (GtkWindow    *window);
+
 GDK_AVAILABLE_IN_ALL
 void     gtk_window_destroy                (GtkWindow    *window);
 
@@ -262,4 +264,3 @@ G_DEFINE_AUTOPTR_CLEANUP_FUNC(GtkWindowGroup, g_object_unref)
 
 G_END_DECLS
 
-#endif /* __GTK_WINDOW_H__ */

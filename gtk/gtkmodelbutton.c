@@ -560,12 +560,21 @@ static void
 update_accessible_properties (GtkModelButton *button)
 {
   if (button->menu_name || button->popover)
-    gtk_accessible_update_property (GTK_ACCESSIBLE (button),
-                                    GTK_ACCESSIBLE_PROPERTY_HAS_POPUP, TRUE,
-                                    -1);
+    {
+      gtk_accessible_update_state (GTK_ACCESSIBLE (button),
+                                  GTK_ACCESSIBLE_STATE_EXPANDED, FALSE,
+                                  -1);
+      gtk_accessible_update_property (GTK_ACCESSIBLE (button),
+                                      GTK_ACCESSIBLE_PROPERTY_HAS_POPUP, TRUE,
+                                      -1);
+    }
   else
-    gtk_accessible_reset_property (GTK_ACCESSIBLE (button),
-                                   GTK_ACCESSIBLE_PROPERTY_HAS_POPUP);
+    {
+      gtk_accessible_reset_property (GTK_ACCESSIBLE (button),
+                                     GTK_ACCESSIBLE_PROPERTY_HAS_POPUP);
+      gtk_accessible_reset_state (GTK_ACCESSIBLE (button),
+                                  GTK_ACCESSIBLE_STATE_EXPANDED);
+    }
 
   if (button->popover)
     gtk_accessible_update_relation (GTK_ACCESSIBLE (button),
@@ -587,6 +596,17 @@ update_accessible_properties (GtkModelButton *button)
   gtk_accessible_update_relation (GTK_ACCESSIBLE (button),
                                   GTK_ACCESSIBLE_RELATION_LABELLED_BY, button->label, NULL,
                                   -1);
+
+  if (button->accel_label)
+    {
+      const char *text = gtk_label_get_label (GTK_LABEL (button->accel_label));
+      gtk_accessible_update_property (GTK_ACCESSIBLE (button),
+                                      GTK_ACCESSIBLE_PROPERTY_KEY_SHORTCUTS, text,
+                                      -1);
+    }
+  else
+    gtk_accessible_reset_property (GTK_ACCESSIBLE (button),
+                                   GTK_ACCESSIBLE_PROPERTY_KEY_SHORTCUTS);
 }
 
 static void
@@ -831,6 +851,7 @@ update_accel (GtkModelButton *self,
       if (!self->accel_label)
         {
           self->accel_label = g_object_new (GTK_TYPE_LABEL,
+                                            "accessible-role", GTK_ACCESSIBLE_ROLE_PRESENTATION,
                                             "css-name", "accelerator",
                                             NULL);
           gtk_widget_insert_before (self->accel_label, GTK_WIDGET (self), NULL);
@@ -877,9 +898,11 @@ update_accel (GtkModelButton *self,
       if (self->controller)
         {
           gtk_widget_remove_controller (GTK_WIDGET (self), GTK_EVENT_CONTROLLER (self->controller));
-          g_clear_object (&self->controller);
+          self->controller = NULL;
         }
     }
+
+  update_accessible_properties (self);
 }
 
 static void
@@ -1043,7 +1066,12 @@ switch_menu (GtkModelButton *button)
 
   stack = gtk_widget_get_ancestor (GTK_WIDGET (button), GTK_TYPE_STACK);
   if (stack != NULL)
-    gtk_stack_set_visible_child_name (GTK_STACK (stack), button->menu_name);
+    {
+      gtk_stack_set_visible_child_name (GTK_STACK (stack), button->menu_name);
+      gtk_accessible_update_state (GTK_ACCESSIBLE (button),
+                                   GTK_ACCESSIBLE_STATE_EXPANDED, TRUE,
+                                   -1);
+    }
 }
 
 static void
@@ -1063,6 +1091,10 @@ gtk_model_button_clicked (GtkModelButton *self)
       gtk_popover_popup (GTK_POPOVER (submenu));
       gtk_popover_menu_set_open_submenu (menu, submenu);
       gtk_popover_menu_set_parent_menu (GTK_POPOVER_MENU (submenu), GTK_WIDGET (menu));
+
+      gtk_accessible_update_state (GTK_ACCESSIBLE (self),
+                                   GTK_ACCESSIBLE_STATE_EXPANDED, TRUE,
+                                   -1);
     }
   else if (!self->keep_open)
     {
@@ -1071,6 +1103,10 @@ gtk_model_button_clicked (GtkModelButton *self)
       popover = gtk_widget_get_ancestor (GTK_WIDGET (self), GTK_TYPE_POPOVER);
       if (popover)
         gtk_popover_popdown (GTK_POPOVER (popover));
+
+      gtk_accessible_update_state (GTK_ACCESSIBLE (self),
+                                   GTK_ACCESSIBLE_STATE_EXPANDED, FALSE,
+                                   -1);
     }
 
   if (self->action_helper)
@@ -1450,9 +1486,26 @@ gesture_pressed (GtkGestureClick *gesture,
 }
 
 static void
-emit_clicked (GtkModelButton *button)
+gesture_released (GtkGestureClick *gesture,
+                  guint            n_press,
+                  double           x,
+                  double           y,
+                  GtkWidget       *widget)
 {
-  g_signal_emit (button, signals[SIGNAL_CLICKED], 0);
+  if (gtk_widget_contains (widget, x, y))
+    g_signal_emit (widget, signals[SIGNAL_CLICKED], 0);
+}
+
+static void
+gesture_unpaired_release (GtkGestureClick  *gesture,
+                          double            x,
+                          double            y,
+                          guint             button,
+                          GdkEventSequence *sequence,
+                          GtkWidget        *widget)
+{
+  if (gtk_widget_contains (widget, x, y))
+    g_signal_emit (widget, signals[SIGNAL_CLICKED], 0);
 }
 
 static void
@@ -1464,7 +1517,7 @@ gtk_model_button_init (GtkModelButton *self)
   gtk_widget_set_focusable (GTK_WIDGET (self), TRUE);
 
   self->role = GTK_BUTTON_ROLE_NORMAL;
-  self->label = gtk_label_new ("");
+  self->label = g_object_new (GTK_TYPE_LABEL, "accessible-role", GTK_ACCESSIBLE_ROLE_PRESENTATION, NULL);
   gtk_widget_set_halign (self->label, GTK_ALIGN_START);
   gtk_widget_set_parent (self->label, GTK_WIDGET (self));
 
@@ -1489,8 +1542,8 @@ gtk_model_button_init (GtkModelButton *self)
   gtk_gesture_single_set_exclusive (GTK_GESTURE_SINGLE (gesture), TRUE);
   gtk_gesture_single_set_button (GTK_GESTURE_SINGLE (gesture), GDK_BUTTON_PRIMARY);
   g_signal_connect (gesture, "pressed", G_CALLBACK (gesture_pressed), self);
-  g_signal_connect_swapped (gesture, "released", G_CALLBACK (emit_clicked), self);
-  g_signal_connect_swapped (gesture, "unpaired-release", G_CALLBACK (emit_clicked), self);
+  g_signal_connect (gesture, "released", G_CALLBACK (gesture_released), self);
+  g_signal_connect (gesture, "unpaired-release", G_CALLBACK (gesture_unpaired_release), self);
   gtk_event_controller_set_propagation_phase (GTK_EVENT_CONTROLLER (gesture), GTK_PHASE_CAPTURE);
   gtk_widget_add_controller (GTK_WIDGET (self), GTK_EVENT_CONTROLLER (gesture));
 }

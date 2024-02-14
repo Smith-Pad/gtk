@@ -697,6 +697,9 @@ gtk_font_dialog_choose_family_finish (GtkFontDialog  *self,
   g_return_val_if_fail (g_task_is_valid (result, self), NULL);
   g_return_val_if_fail (g_task_get_source_tag (G_TASK (result)) == gtk_font_dialog_choose_family, NULL);
 
+  /* Destroy the dialog window not to be bound to GTask lifecycle */
+  g_task_set_task_data (G_TASK (result), NULL, NULL);
+
   return g_task_propagate_pointer (G_TASK (result), error);
 }
 
@@ -777,6 +780,9 @@ gtk_font_dialog_choose_face_finish (GtkFontDialog  *self,
   g_return_val_if_fail (g_task_is_valid (result, self), NULL);
   g_return_val_if_fail (g_task_get_source_tag (G_TASK (result)) == gtk_font_dialog_choose_face, NULL);
 
+  /* Destroy the dialog window not to be bound to GTask lifecycle */
+  g_task_set_task_data (G_TASK (result), NULL, NULL);
+
   return g_task_propagate_pointer (G_TASK (result), error);
 }
 
@@ -855,6 +861,9 @@ gtk_font_dialog_choose_font_finish (GtkFontDialog  *self,
   g_return_val_if_fail (g_task_is_valid (result, self), NULL);
   g_return_val_if_fail (g_task_get_source_tag (G_TASK (result)) == gtk_font_dialog_choose_font, NULL);
 
+  /* Destroy the dialog window not to be bound to GTask lifecycle */
+  g_task_set_task_data (G_TASK (result), NULL, NULL);
+
   return g_task_propagate_pointer (G_TASK (result), error);
 }
 
@@ -917,9 +926,9 @@ gtk_font_dialog_choose_font_and_features (GtkFontDialog        *self,
  * gtk_font_dialog_choose_font_and_features_finish:
  * @self: a `GtkFontDialog`
  * @result: a `GAsyncResult`
- * @font_desc: (out caller-allocates): return location for font description
- * @font_features: (out caller-allocates): return location for font features
- * @language: (out caller-allocates): return location for the language
+ * @font_desc: (out): return location for font description
+ * @font_features: (out): return location for font features
+ * @language: (out): return location for the language
  * @error: return location for a [enum@Gtk.DialogError] error
  *
  * Finishes the [method@Gtk.FontDialog.choose_font_and_features]
@@ -944,6 +953,8 @@ gtk_font_dialog_choose_font_and_features_finish (GtkFontDialog         *self,
   g_return_val_if_fail (g_task_is_valid (result, self), FALSE);
   g_return_val_if_fail (g_task_get_source_tag (G_TASK (result)) == gtk_font_dialog_choose_font_and_features, FALSE);
 
+  /* Destroy the dialog window not to be bound to GTask lifecycle */
+  g_task_set_task_data (G_TASK (result), NULL, NULL);
   font_result = g_task_propagate_pointer (G_TASK (result), error);
 
   if (font_result)

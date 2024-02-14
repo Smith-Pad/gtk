@@ -19,8 +19,7 @@
  *
  */
 
-#ifndef __GTK_STACK_H__
-#define __GTK_STACK_H__
+#pragma once
 
 #if !defined (__GTK_H_INSIDE__) && !defined (GTK_COMPILATION)
 #error "Only <gtk/gtk.h> can be included directly."
@@ -180,7 +179,7 @@ GDK_AVAILABLE_IN_ALL
 GtkSelectionModel *    gtk_stack_get_pages               (GtkStack *stack);
 
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(GtkStack, g_object_unref)
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(GtkStackPage, g_object_unref)
 
 G_END_DECLS
 
-#endif

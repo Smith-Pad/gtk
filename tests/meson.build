@@ -1,5 +1,8 @@
 gtk_tests = [
   # testname, optional extra sources
+  ['devicepixels'],
+  ['testsections'],
+  ['testfilelauncher'],
   ['input'],
   ['testpopup'],
   ['testupload'],
@@ -22,14 +25,13 @@ gtk_tests = [
   ['testappchooserbutton'],
   ['testassistant'],
   ['testbaseline'],
+  ['testbaseline2'],
   ['testcalendar'],
-  ['testclipboard2'],
   ['testcombo'],
   ['testcolumnview'],
   ['testcombochange'],
   ['testcellrenderertext'],
   ['testdialog'],
-  ['testdnd'],
   ['testdnd2'],
   ['testdndresize'],
   ['testellipsise'],
@@ -102,6 +104,7 @@ gtk_tests = [
   ['teststack'],
   ['testrevealer'],
   ['testrevealer2'],
+  ['testsuspended'],
   ['testwindowsize'],
   ['testpopover'],
   ['listmodel'],
@@ -123,7 +126,15 @@ gtk_tests = [
 ]
 
 if os_unix
-  gtk_tests += [['testfontchooserdialog']]
+  gtk_tests += [
+    ['testfontchooserdialog'],
+  ]
+endif
+
+if os_linux
+  gtk_tests += [
+    ['testdmabuf', ['testdmabuf.c', 'gtkclipper.c']],
+  ]
 endif
 
 if x11_enabled
@@ -144,10 +155,3 @@ foreach t: gtk_tests
     dependencies: [libgtk_dep, libm],
   )
 endforeach
-
-if libsysprof_dep.found()
-  executable('testperf',
-    sources: 'testperf.c',
-    dependencies: [libsysprof_dep, platform_gio_dep, libm],
-  )
-endif

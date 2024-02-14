@@ -231,7 +231,7 @@ parse_compose_sequence (const char *seq,
       char *start = words[i];
       char *end = strchr (words[i], '>');
       char *match;
-      gunichar codepoint;
+      guint keyval;
 
       if (words[i][0] == '\0')
              continue;
@@ -248,18 +248,24 @@ parse_compose_sequence (const char *seq,
 
       if (is_codepoint (match))
         {
-          codepoint = (gunichar) g_ascii_strtoll (match + 1, NULL, 16);
-          sequence[n] = codepoint;
+          keyval = gdk_unicode_to_keyval ((gunichar) g_ascii_strtoll (match + 1, NULL, 16));
+          if (keyval > 0xffff)
+            g_warning ("Can't handle >16bit keyvals");
+
+          sequence[n] = (guint16) keyval;
           sequence[n + 1] = 0;
         }
       else
         {
-          codepoint = (gunichar) gdk_keyval_from_name (match);
-          sequence[n] = codepoint;
+          keyval = gdk_keyval_from_name (match);
+          if (keyval > 0xffff)
+            g_warning ("Can't handle >16bit keyvals");
+
+          sequence[n] = (guint16) keyval;
           sequence[n + 1] = 0;
         }
 
-      if (codepoint == GDK_KEY_VoidSymbol)
+      if (keyval == GDK_KEY_VoidSymbol)
         g_warning ("Could not get code point of keysym %s", match);
       g_free (match);
       n++;
@@ -980,6 +986,7 @@ parser_get_compose_table (GtkComposeParser *parser)
           current_first = (guint16)sequence[0];
 
           data[first_pos] = (guint16)sequence[0];
+
           for (i = 1; i < index_rowstride; i++)
             data[first_pos + i] = rest_pos;
         }
@@ -997,6 +1004,14 @@ parser_get_compose_table (GtkComposeParser *parser)
       n_sequences++;
 
       rest_pos += len;
+
+      if (rest_pos >= 0x8000)
+        {
+          g_warning ("GTK can't handle compose tables this large (%s)", parser->compose_file ? parser->compose_file : "");
+          g_free (data);
+          g_string_free (char_data, TRUE);
+          return NULL;
+        }
 
       for (i = len + 1; i < index_rowstride; i++)
         data[first_pos + i] = rest_pos;
@@ -1322,10 +1337,27 @@ gtk_compose_table_check (const GtkComposeTable *table,
   if (!seq_index)
     return FALSE;
 
-  if (n_compose == 1)
-    return TRUE;
-
   match = FALSE;
+
+  if (n_compose == 1)
+    {
+      if (seq_index[2] - seq_index[1] > 0)
+        {
+          seq = table->data + seq_index[1];
+
+          value = seq[0];
+
+          if ((value & (1 << 15)) != 0)
+            g_string_append (output, &table->char_data[value & ~(1 << 15)]);
+          else
+            g_string_append_unichar (output, value);
+
+          if (compose_match)
+            *compose_match = TRUE;
+        }
+
+      return TRUE;
+    }
 
   for (i = n_compose - 1; i < table->max_seq_len; i++)
     {

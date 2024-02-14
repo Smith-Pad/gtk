@@ -155,7 +155,7 @@ gtk_tree_list_row_sort_keys_compare (gconstpointer a,
   resb = unpack (keysb, &keysb, &sizeb);
   if (!resa)
     return resb ? GTK_ORDERING_LARGER : (keysa[2] < keysb[2] ? GTK_ORDERING_SMALLER : 
-                                        (keysb[2] > keysa[2] ? GTK_ORDERING_LARGER : GTK_ORDERING_EQUAL));
+                                        (keysa[2] > keysb[2] ? GTK_ORDERING_LARGER : GTK_ORDERING_EQUAL));
   else if (!resb)
     return GTK_ORDERING_SMALLER;
 
@@ -350,7 +350,7 @@ gtk_tree_list_row_sort_keys_new (GtkTreeListRowSorter *self)
   result = gtk_sort_keys_new (GtkTreeListRowSortKeys,
                               &GTK_TREE_LIST_ROW_SORT_KEYS_CLASS,
                               sizeof (gpointer[MAX_KEY_DEPTH]),
-                              sizeof (gpointer[MAX_KEY_DEPTH]));
+                              G_ALIGNOF (gpointer));
 
   if (self->sorter)
     result->sort_keys = gtk_sorter_get_keys (self->sorter);

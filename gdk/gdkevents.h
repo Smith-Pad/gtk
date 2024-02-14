@@ -22,19 +22,16 @@
  * GTK+ at ftp://ftp.gtk.org/pub/gtk/.
  */
 
-#ifndef __GDK_EVENTS_H__
-#define __GDK_EVENTS_H__
+#pragma once
 
 #if !defined (__GDK_H_INSIDE__) && !defined (GTK_COMPILATION)
 #error "Only <gdk/gdk.h> can be included directly."
 #endif
 
+#include <gdk/gdktypes.h>
 #include <gdk/gdkdevice.h>
 #include <gdk/gdkdevicetool.h>
 #include <gdk/gdkdrag.h>
-#include <gdk/gdkenums.h>
-#include <gdk/gdktypes.h>
-#include <gdk/gdkversionmacros.h>
 
 G_BEGIN_DECLS
 
@@ -168,12 +165,18 @@ typedef struct _GdkTouchpadEvent        GdkTouchpadEvent;
  * @GDK_PAD_RING: A tablet pad axis event from a "ring".
  * @GDK_PAD_STRIP: A tablet pad axis event from a "strip".
  * @GDK_PAD_GROUP_MODE: A tablet pad group mode change.
- * @GDK_TOUCHPAD_HOLD: A touchpad hold gesture event, the current state
- *   is determined by its phase field. Since: 4.6
  * @GDK_EVENT_LAST: marks the end of the GdkEventType enumeration.
  *
  * Specifies the type of the event.
  */
+/**
+  * GDK_TOUCHPAD_HOLD:
+  *
+  * A touchpad hold gesture event, the current state is determined by its phase
+  * field.
+  *
+  * Since: 4.6
+  */
 typedef enum
 {
   GDK_DELETE,
@@ -555,4 +558,3 @@ G_DEFINE_AUTOPTR_CLEANUP_FUNC(GdkEvent, gdk_event_unref)
 
 G_END_DECLS
 
-#endif /* __GDK_EVENTS_H__ */
