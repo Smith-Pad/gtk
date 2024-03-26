@@ -747,12 +747,18 @@ gtk_graphene_rect_scale_affine (const graphene_rect_t *rect,
     graphene_rect_normalize (res);
 }
 
+typedef enum {
+  ENSURE_POSITIVE_SCALE = (1 << 0),
+  ENSURE_UNIFORM_SCALE = (1 << 1),
+} GtkEnsureFlags;
+
 static void
-gtk_snapshot_ensure_affine (GtkSnapshot *snapshot,
-                            float       *scale_x,
-                            float       *scale_y,
-                            float       *dx,
-                            float       *dy)
+gtk_snapshot_ensure_affine_with_flags (GtkSnapshot    *snapshot,
+                                       GtkEnsureFlags  flags,
+                                       float          *scale_x,
+                                       float          *scale_y,
+                                       float          *dx,
+                                       float          *dy)
 {
   const GtkSnapshotState *state = gtk_snapshot_get_current_state (snapshot);
 
@@ -765,7 +771,8 @@ gtk_snapshot_ensure_affine (GtkSnapshot *snapshot,
   else if (gsk_transform_get_category (state->transform) == GSK_TRANSFORM_CATEGORY_2D_AFFINE)
     {
       gsk_transform_to_affine (state->transform, scale_x, scale_y, dx, dy);
-      if (*scale_x < 0.0 || *scale_y < 0.0)
+      if (((flags & ENSURE_POSITIVE_SCALE) && (*scale_x < 0.0 || *scale_y < 0.0)) ||
+          ((flags & ENSURE_UNIFORM_SCALE) && (*scale_x != *scale_y)))
         {
           gtk_snapshot_autopush_transform (snapshot);
           state = gtk_snapshot_get_current_state (snapshot);
@@ -776,6 +783,19 @@ gtk_snapshot_ensure_affine (GtkSnapshot *snapshot,
     {
       gsk_transform_to_affine (state->transform, scale_x, scale_y, dx, dy);
     }
+}
+
+static void
+gtk_snapshot_ensure_affine (GtkSnapshot *snapshot,
+                            float       *scale_x,
+                            float       *scale_y,
+                            float       *dx,
+                            float       *dy)
+{
+  gtk_snapshot_ensure_affine_with_flags (snapshot,
+                                         ENSURE_POSITIVE_SCALE,
+                                         scale_x, scale_y,
+                                         dx, dy);
 }
 
 static void
@@ -1377,11 +1397,19 @@ gtk_snapshot_push_shadow (GtkSnapshot     *snapshot,
                           const GskShadow *shadow,
                           gsize            n_shadows)
 {
-  const GtkSnapshotState *current_state = gtk_snapshot_get_current_state (snapshot);
   GtkSnapshotState *state;
+  GskTransform *transform;
+  float scale_x, scale_y, dx, dy;
+  gsize i;
+
+  gtk_snapshot_ensure_affine_with_flags (snapshot,
+                                         ENSURE_POSITIVE_SCALE | ENSURE_UNIFORM_SCALE,
+                                         &scale_x, &scale_y,
+                                         &dx, &dy);
+  transform = gsk_transform_scale (gsk_transform_translate (NULL, &GRAPHENE_POINT_INIT (dx, dy)), scale_x, scale_y);
 
   state = gtk_snapshot_push_state (snapshot,
-                                   current_state->transform,
+                                   transform,
                                    gtk_snapshot_collect_shadow,
                                    gtk_snapshot_clear_shadow);
 
@@ -1390,13 +1418,23 @@ gtk_snapshot_push_shadow (GtkSnapshot     *snapshot,
     {
       state->data.shadow.shadows = NULL;
       memcpy (&state->data.shadow.a_shadow, shadow, sizeof (GskShadow));
+      state->data.shadow.a_shadow.dx *= scale_x;
+      state->data.shadow.a_shadow.dy *= scale_y;
+      state->data.shadow.a_shadow.radius *= scale_x;
     }
   else
     {
       state->data.shadow.shadows = g_malloc (sizeof (GskShadow) * n_shadows);
       memcpy (state->data.shadow.shadows, shadow, sizeof (GskShadow) * n_shadows);
+      for (i = 0; i < n_shadows; i++)
+        {
+          state->data.shadow.shadows[i].dx *= scale_x;
+          state->data.shadow.shadows[i].dy *= scale_y;
+          state->data.shadow.shadows[i].radius *= scale_x;
+        }
     }
 
+  gsk_transform_unref (transform);
 }
 
 static GskRenderNode *
@@ -2389,7 +2427,7 @@ gtk_snapshot_append_linear_gradient (GtkSnapshot            *snapshot,
 {
   GskRenderNode *node;
   graphene_rect_t real_bounds;
-  float dx, dy;
+  float scale_x, scale_y, dx, dy;
   const GdkRGBA *first_color;
   gboolean need_gradient = FALSE;
 
@@ -2399,8 +2437,11 @@ gtk_snapshot_append_linear_gradient (GtkSnapshot            *snapshot,
   g_return_if_fail (stops != NULL);
   g_return_if_fail (n_stops > 1);
 
-  gtk_snapshot_ensure_translate (snapshot, &dx, &dy);
-  graphene_rect_offset_r (bounds, dx, dy, &real_bounds);
+  gtk_snapshot_ensure_affine_with_flags (snapshot,
+                                         ENSURE_POSITIVE_SCALE | ENSURE_UNIFORM_SCALE,
+                                         &scale_x, &scale_y,
+                                         &dx, &dy);
+  gtk_graphene_rect_scale_affine (bounds, scale_x, scale_y, dx, dy, &real_bounds);
 
   first_color = &stops[0].color;
   for (gsize i = 0; i < n_stops; i ++)
@@ -2416,10 +2457,10 @@ gtk_snapshot_append_linear_gradient (GtkSnapshot            *snapshot,
     {
       graphene_point_t real_start_point, real_end_point;
 
-      real_start_point.x = start_point->x + dx;
-      real_start_point.y = start_point->y + dy;
-      real_end_point.x = end_point->x + dx;
-      real_end_point.y = end_point->y + dy;
+      real_start_point.x = scale_x * start_point->x + dx;
+      real_start_point.y = scale_y * start_point->y + dy;
+      real_end_point.x = scale_x * end_point->x + dx;
+      real_end_point.y = scale_y * end_point->y + dy;
 
       node = gsk_linear_gradient_node_new (&real_bounds,
                                            &real_start_point,
@@ -2456,7 +2497,7 @@ gtk_snapshot_append_repeating_linear_gradient (GtkSnapshot            *snapshot,
 {
   GskRenderNode *node;
   graphene_rect_t real_bounds;
-  float dx, dy;
+  float scale_x, scale_y, dx, dy;
   gboolean need_gradient = FALSE;
   const GdkRGBA *first_color;
 
@@ -2466,8 +2507,8 @@ gtk_snapshot_append_repeating_linear_gradient (GtkSnapshot            *snapshot,
   g_return_if_fail (stops != NULL);
   g_return_if_fail (n_stops > 1);
 
-  gtk_snapshot_ensure_translate (snapshot, &dx, &dy);
-  graphene_rect_offset_r (bounds, dx, dy, &real_bounds);
+  gtk_snapshot_ensure_affine (snapshot, &scale_x, &scale_y, &dx, &dy);
+  gtk_graphene_rect_scale_affine (bounds, scale_x, scale_y, dx, dy, &real_bounds);
 
   first_color = &stops[0].color;
   for (gsize i = 0; i < n_stops; i ++)
@@ -2483,10 +2524,10 @@ gtk_snapshot_append_repeating_linear_gradient (GtkSnapshot            *snapshot,
     {
       graphene_point_t real_start_point, real_end_point;
 
-      real_start_point.x = start_point->x + dx;
-      real_start_point.y = start_point->y + dy;
-      real_end_point.x = end_point->x + dx;
-      real_end_point.y = end_point->y + dy;
+      real_start_point.x = scale_x * start_point->x + dx;
+      real_start_point.y = scale_y * start_point->y + dy;
+      real_end_point.x = scale_x * end_point->x + dx;
+      real_end_point.y = scale_y * end_point->y + dy;
 
       node = gsk_repeating_linear_gradient_node_new (&real_bounds,
                                                      &real_start_point,

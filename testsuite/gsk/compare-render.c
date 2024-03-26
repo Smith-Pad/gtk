@@ -14,6 +14,7 @@ static gboolean repeat = FALSE;
 static gboolean mask = FALSE;
 static gboolean replay = FALSE;
 static gboolean clip = FALSE;
+static gboolean colorflip = FALSE;
 
 extern void
 replay_node (GskRenderNode *node, GtkSnapshot *snapshot);
@@ -170,6 +171,7 @@ static const GOptionEntry options[] = {
   { "mask", 0, 0, G_OPTION_ARG_NONE, &mask, "Do masked test", NULL },
   { "replay", 0, 0, G_OPTION_ARG_NONE, &replay, "Do replay test", NULL },
   { "clip", 0, 0, G_OPTION_ARG_NONE, &clip, "Do clip test", NULL },
+  { "colorflip", 0, 0, G_OPTION_ARG_NONE, &colorflip, "Swap colors", NULL },
   { NULL }
 };
 
@@ -238,6 +240,33 @@ apply_mask_to_pixbuf (GdkPixbuf *pixbuf)
   return copy;
 }
 
+static GdkPixbuf *
+apply_colorflip_to_pixbuf (GdkPixbuf *pixbuf)
+{
+  GdkPixbuf *copy;
+  int width, height;
+
+  copy = gdk_pixbuf_add_alpha (pixbuf, FALSE, 0, 0, 0);
+  width = gdk_pixbuf_get_width (pixbuf);
+  height = gdk_pixbuf_get_height (pixbuf);
+
+  for (unsigned int j = 0; j < height; j++)
+    {
+      guint8 *row = gdk_pixbuf_get_pixels (copy) + j * gdk_pixbuf_get_rowstride (copy);
+      for (unsigned int i = 0; i < width; i++)
+        {
+          guint8 *p = row + i * 4;
+          guint8 q;
+
+          q = p[0];
+          p[0] = p[1];
+          p[1] = q;
+        }
+    }
+
+  return copy;
+}
+
 static void
 make_random_clip (const graphene_rect_t *bounds,
                   cairo_rectangle_int_t *int_clip)
@@ -278,8 +307,8 @@ apply_clip_to_pixbuf (GdkPixbuf                   *pixbuf,
 int
 main (int argc, char **argv)
 {
-  GdkTexture *reference_texture;
-  GdkTexture *rendered_texture;
+  GdkTexture *reference_texture = NULL;
+  GdkTexture *rendered_texture = NULL;
   GskRenderer *renderer;
   GdkSurface *window;
   GskRenderNode *node;
@@ -288,7 +317,7 @@ main (int argc, char **argv)
   gboolean success = TRUE;
   GError *error = NULL;
   GOptionContext *context;
-  GdkTexture *diff_texture;
+  GdkTexture *diff_texture = NULL;
 
   (g_test_init) (&argc, &argv, NULL);
 
@@ -310,6 +339,9 @@ main (int argc, char **argv)
 
   g_option_context_free (context);
 
+  if (!plain && !flip && !rotate && !repeat && !mask && !replay && !clip && !colorflip)
+    plain = TRUE;
+
   gtk_init ();
 
   node_file = argv[1];
@@ -326,33 +358,36 @@ main (int argc, char **argv)
   if (!node)
     return 1;
 
-  /* Render the .node file and download to cairo surface */
-  rendered_texture = gsk_renderer_render_texture (renderer, node, NULL);
-  g_assert_nonnull (rendered_texture);
-
-  save_image (rendered_texture, node_file, ".out.png");
-
-  /* Load the given reference png file */
-  reference_texture = gdk_texture_new_from_filename (png_file, &error);
-  if (reference_texture == NULL)
+  if (plain)
     {
-      g_print ("Error loading reference surface: %s\n", error->message);
-      g_clear_error (&error);
+      /* Render the .node file and download to cairo surface */
+      rendered_texture = gsk_renderer_render_texture (renderer, node, NULL);
+      g_assert_nonnull (rendered_texture);
+
       save_image (rendered_texture, node_file, ".out.png");
-      return 0;
-    }
 
-  /* Now compare the two */
-  diff_texture = reftest_compare_textures (rendered_texture, reference_texture);
-  if (diff_texture)
-    {
-      save_image (diff_texture, node_file, ".diff.png");
-      g_object_unref (diff_texture);
-      success = FALSE;
-    }
+      /* Load the given reference png file */
+      reference_texture = gdk_texture_new_from_filename (png_file, &error);
+      if (reference_texture == NULL)
+        {
+          g_print ("Error loading reference surface: %s\n", error->message);
+          g_clear_error (&error);
+          save_image (rendered_texture, node_file, ".out.png");
+          return 0;
+        }
 
-  g_clear_object (&reference_texture);
-  g_clear_object (&rendered_texture);
+      /* Now compare the two */
+      diff_texture = reftest_compare_textures (rendered_texture, reference_texture);
+      if (diff_texture)
+        {
+          save_image (diff_texture, node_file, ".diff.png");
+          success = FALSE;
+        }
+
+      g_clear_object (&diff_texture);
+      g_clear_object (&reference_texture);
+      g_clear_object (&rendered_texture);
+    }
 
   if (flip)
     {
@@ -382,10 +417,10 @@ main (int argc, char **argv)
       if (diff_texture)
         {
           save_image (diff_texture, node_file, "-flipped.diff.png");
-          g_object_unref (diff_texture);
           success = FALSE;
         }
 
+      g_clear_object (&diff_texture);
       g_clear_object (&rendered_texture);
       g_clear_object (&reference_texture);
       gsk_render_node_unref (node2);
@@ -448,10 +483,10 @@ main (int argc, char **argv)
       if (diff_texture)
         {
           save_image (diff_texture, node_file, "-repeated.diff.png");
-          g_object_unref (diff_texture);
           success = FALSE;
         }
 
+      g_clear_object (&diff_texture);
       g_clear_object (&rendered_texture);
       g_clear_object (&reference_texture);
       gsk_render_node_unref (node2);
@@ -485,10 +520,10 @@ main (int argc, char **argv)
       if (diff_texture)
         {
           save_image (diff_texture, node_file, "-rotated.diff.png");
-          g_object_unref (diff_texture);
           success = FALSE;
         }
 
+      g_clear_object (&diff_texture);
       g_clear_object (&rendered_texture);
       g_clear_object (&reference_texture);
       gsk_render_node_unref (node2);
@@ -542,10 +577,10 @@ main (int argc, char **argv)
       if (diff_texture)
         {
           save_image (diff_texture, node_file, "-masked.diff.png");
-          g_object_unref (diff_texture);
           success = FALSE;
         }
 
+      g_clear_object (&diff_texture);
       g_clear_object (&rendered_texture);
       g_clear_object (&reference_texture);
       gsk_render_node_unref (node2);
@@ -583,10 +618,10 @@ main (int argc, char **argv)
       if (diff_texture)
         {
           save_image (diff_texture, node_file, "-replayed.diff.png");
-          g_object_unref (diff_texture);
           success = FALSE;
         }
 
+      g_clear_object (&diff_texture);
       g_clear_object (&rendered_texture);
       g_clear_object (&rendered_texture2);
       gsk_render_node_unref (node2);
@@ -638,18 +673,59 @@ main (int argc, char **argv)
       if (diff_texture)
         {
           save_image (diff_texture, node_file, "-clipped.diff.png");
-          g_object_unref (diff_texture);
           success = FALSE;
         }
 
+      g_clear_object (&diff_texture);
       g_clear_object (&rendered_texture);
       g_clear_object (&reference_texture);
       gsk_render_node_unref (node2);
     }
 
 skip_clip:
-  gsk_render_node_unref (node);
 
+  if (colorflip)
+    {
+      GskRenderNode *node2;
+      GdkPixbuf *pixbuf, *pixbuf2;
+      graphene_matrix_t matrix;
+
+      graphene_matrix_init_from_float (&matrix,
+                                       (const float []) { 0, 1, 0, 0,
+                                                          1, 0, 0, 0,
+                                                          0, 0, 1, 0,
+                                                          0, 0, 0, 1 });
+
+      node2 = gsk_color_matrix_node_new (node, &matrix, graphene_vec4_zero ());
+
+      save_node (node2, node_file, "-colorflipped.node");
+
+      rendered_texture = gsk_renderer_render_texture (renderer, node2, NULL);
+      save_image (rendered_texture, node_file, "-colorflipped.out.png");
+
+      pixbuf = gdk_pixbuf_new_from_file (png_file, &error);
+      pixbuf2 = apply_colorflip_to_pixbuf (pixbuf);
+      reference_texture = gdk_texture_new_for_pixbuf (pixbuf2);
+      g_object_unref (pixbuf2);
+      g_object_unref (pixbuf);
+
+      save_image (reference_texture, node_file, "-colorflipped.ref.png");
+
+      diff_texture = reftest_compare_textures (rendered_texture, reference_texture);
+
+      if (diff_texture)
+        {
+          save_image (diff_texture, node_file, "-colorflipped.diff.png");
+          success = FALSE;
+        }
+
+      g_clear_object (&diff_texture);
+      g_clear_object (&rendered_texture);
+      g_clear_object (&reference_texture);
+      gsk_render_node_unref (node2);
+    }
+
+  gsk_render_node_unref (node);
   gsk_renderer_unrealize (renderer);
   g_object_unref (renderer);
   gdk_surface_destroy (window);

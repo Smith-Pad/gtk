@@ -52,7 +52,7 @@ gsk_gpu_upload_op_gl_command_with_area (GskGpuOp                    *op,
     {
       glTexSubImage2D (GL_TEXTURE_2D, 0, area->x, area->y, area->width, area->height, gl_format, gl_type, data);
     }
-  else if (stride % bpp == 0 && gdk_gl_context_has_unpack_subimage (context))
+  else if (stride % bpp == 0 && gdk_gl_context_has_feature (context, GDK_GL_FEATURE_UNPACK_SUBIMAGE))
     {
       glPixelStorei (GL_UNPACK_ROW_LENGTH, stride / bpp);
 
@@ -110,8 +110,8 @@ gsk_gpu_upload_op_vk_command_with_area (GskGpuOp                    *op,
   data = gsk_gpu_buffer_map (*buffer);
 
   draw_func (op, data, stride);
-  
-  gsk_gpu_buffer_unmap (*buffer);
+
+  gsk_gpu_buffer_unmap (*buffer, area->height * stride);
 
   vkCmdPipelineBarrier (state->vk_command_buffer,
                         VK_PIPELINE_STAGE_HOST_BIT,
@@ -485,7 +485,6 @@ struct _GskGpuUploadGlyphOp
   cairo_rectangle_int_t area;
   PangoFont *font;
   PangoGlyph glyph;
-  float scale;
   graphene_point_t origin;
 
   GskGpuBuffer *buffer;
@@ -509,11 +508,19 @@ gsk_gpu_upload_glyph_op_print (GskGpuOp    *op,
                                guint        indent)
 {
   GskGpuUploadGlyphOp *self = (GskGpuUploadGlyphOp *) op;
+  PangoFontDescription *desc;
+  char *str;
+
+  desc = pango_font_describe_with_absolute_size (self->font);
+  str = pango_font_description_to_string (desc);
 
   gsk_gpu_print_op (string, indent, "upload-glyph");
   gsk_gpu_print_int_rect (string, &self->area);
-  g_string_append_printf (string, "glyph %u @ %g ", self->glyph, self->scale);
+  g_string_append_printf (string, "glyph %u font %s ", self->glyph, str);
   gsk_gpu_print_newline (string);
+
+  g_free (str);
+  pango_font_description_free (desc);
 }
 
 static void
@@ -524,6 +531,7 @@ gsk_gpu_upload_glyph_op_draw (GskGpuOp *op,
   GskGpuUploadGlyphOp *self = (GskGpuUploadGlyphOp *) op;
   cairo_surface_t *surface;
   cairo_t *cr;
+  PangoRectangle ink_rect = { 0, };
 
   surface = cairo_image_surface_create_for_data (data,
                                                  CAIRO_FORMAT_ARGB32,
@@ -531,7 +539,6 @@ gsk_gpu_upload_glyph_op_draw (GskGpuOp *op,
                                                  self->area.height,
                                                  stride);
   cairo_surface_set_device_offset (surface, self->origin.x, self->origin.y);
-  cairo_surface_set_device_scale (surface, self->scale, self->scale);
 
   cr = cairo_create (surface);
   cairo_set_operator (cr, CAIRO_OPERATOR_CLEAR);
@@ -546,12 +553,19 @@ gsk_gpu_upload_glyph_op_draw (GskGpuOp *op,
   /* Draw glyph */
   cairo_set_source_rgba (cr, 1, 1, 1, 1);
 
+  /* The pango code for drawing hex boxes uses the glyph width */
+  if (self->glyph & PANGO_GLYPH_UNKNOWN_FLAG)
+    pango_font_get_glyph_extents (self->font, self->glyph, &ink_rect, NULL);
+
   pango_cairo_show_glyph_string (cr,
                                  self->font,
                                  &(PangoGlyphString) {
                                      .num_glyphs = 1,
                                      .glyphs = (PangoGlyphInfo[1]) { {
-                                         .glyph = self->glyph
+                                         .glyph = self->glyph,
+                                         .geometry = {
+                                           .width = ink_rect.width,
+                                         }
                                      } }
                                  });
 
@@ -610,7 +624,6 @@ gsk_gpu_upload_glyph_op (GskGpuFrame                 *frame,
                          PangoFont                   *font,
                          const PangoGlyph             glyph,
                          const cairo_rectangle_int_t *area,
-                         float                        scale,
                          const graphene_point_t      *origin)
 {
   GskGpuUploadGlyphOp *self;
@@ -621,6 +634,5 @@ gsk_gpu_upload_glyph_op (GskGpuFrame                 *frame,
   self->area = *area;
   self->font = g_object_ref (font);
   self->glyph = glyph;
-  self->scale = scale;
   self->origin = *origin;
 }

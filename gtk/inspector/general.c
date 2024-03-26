@@ -672,6 +672,7 @@ add_wayland_protocols (GdkDisplay          *display,
 
       append_wayland_protocol_row (gen, (struct wl_proxy *)d->compositor);
       append_wayland_protocol_row (gen, (struct wl_proxy *)d->shm);
+      append_wayland_protocol_row (gen, (struct wl_proxy *)d->linux_dmabuf);
       append_wayland_protocol_row (gen, (struct wl_proxy *)d->xdg_wm_base);
       append_wayland_protocol_row (gen, (struct wl_proxy *)d->zxdg_shell_v6);
       append_wayland_protocol_row (gen, (struct wl_proxy *)d->gtk_shell);
@@ -691,6 +692,7 @@ add_wayland_protocols (GdkDisplay          *display,
       append_wayland_protocol_row (gen, (struct wl_proxy *)d->xdg_activation);
       append_wayland_protocol_row (gen, (struct wl_proxy *)d->fractional_scale);
       append_wayland_protocol_row (gen, (struct wl_proxy *)d->viewporter);
+      append_wayland_protocol_row (gen, (struct wl_proxy *)d->presentation);
     }
 }
 #endif

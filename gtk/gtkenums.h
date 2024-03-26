@@ -1432,6 +1432,13 @@ typedef enum {
  * Since: 4.14
  */
 
+/**
+ * GTK_ACCESSIBLE_ROLE_TERMINAL:
+ *
+ * A virtual terminal.
+ *
+ * Since: 4.14
+ */
 typedef enum {
   GTK_ACCESSIBLE_ROLE_ALERT,
   GTK_ACCESSIBLE_ROLE_ALERT_DIALOG,
@@ -1516,7 +1523,8 @@ typedef enum {
   GTK_ACCESSIBLE_ROLE_PARAGRAPH GDK_AVAILABLE_ENUMERATOR_IN_4_14,
   GTK_ACCESSIBLE_ROLE_BLOCK_QUOTE GDK_AVAILABLE_ENUMERATOR_IN_4_14,
   GTK_ACCESSIBLE_ROLE_ARTICLE GDK_AVAILABLE_ENUMERATOR_IN_4_14,
-  GTK_ACCESSIBLE_ROLE_COMMENT GDK_AVAILABLE_ENUMERATOR_IN_4_14
+  GTK_ACCESSIBLE_ROLE_COMMENT GDK_AVAILABLE_ENUMERATOR_IN_4_14,
+  GTK_ACCESSIBLE_ROLE_TERMINAL GDK_AVAILABLE_ENUMERATOR_IN_4_14
 } GtkAccessibleRole;
 
 /**
@@ -1826,13 +1834,16 @@ typedef enum {
 
 /**
  * GtkPopoverMenuFlags:
- * @GTK_POPOVER_MENU_SLIDING: Submenus are presented as sliding submenus that
- *   replace the main menu.
  * @GTK_POPOVER_MENU_NESTED: Submenus are presented as traditional, nested
  *   popovers.
  *
  * Flags that affect how [class@Gtk.PopoverMenu] widgets built from
  * a [class@Gio.MenuModel] are created and displayed.
+ */
+/**
+ * GTK_POPOVER_MENU_SLIDING:
+ *
+ * Submenus are presented as sliding submenus that replace the main menu.
  *
  * Since: 4.14
  */

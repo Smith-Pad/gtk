@@ -45,7 +45,8 @@ gsk_vulkan_buffer_map (GskGpuBuffer *buffer)
 }
 
 static void
-gsk_vulkan_buffer_unmap (GskGpuBuffer *buffer)
+gsk_vulkan_buffer_unmap (GskGpuBuffer *buffer,
+                         gsize         size)
 {
 }
 
@@ -96,7 +97,8 @@ gsk_vulkan_buffer_new_internal (GskVulkanDevice   *device,
   self->allocator = gsk_vulkan_device_find_allocator (device,
                                                       requirements.memoryTypeBits,
                                                       GSK_VULKAN_MEMORY_MAPPABLE,
-                                                      GSK_VULKAN_MEMORY_MAPPABLE);
+                                                      GSK_VULKAN_MEMORY_MAPPABLE |
+                                                      VK_MEMORY_PROPERTY_HOST_CACHED_BIT);
   gsk_vulkan_alloc (self->allocator,
                     requirements.size,
                     requirements.alignment,

@@ -52,6 +52,7 @@
 #include "gdktoplevel-wayland-private.h"
 
 #include "linux-dmabuf-unstable-v1-client-protocol.h"
+#include "presentation-time-client-protocol.h"
 
 
 /**
@@ -201,17 +202,23 @@ get_egl_window_size (GdkSurface *surface,
 
   if (GDK_DISPLAY_DEBUG_CHECK (display, GL_NO_FRACTIONAL))
     {
-      GDK_DISPLAY_DEBUG (display, OPENGL, "Using integer scale %d for EGL window", gdk_fractional_scale_to_int (&impl->scale));
-
       *width = surface->width * gdk_fractional_scale_to_int (&impl->scale);
       *height = surface->height * gdk_fractional_scale_to_int (&impl->scale);
+
+      GDK_DISPLAY_DEBUG (display, OPENGL, "Using integer scale %d for EGL window (%d %d => %d %d)",
+                         gdk_fractional_scale_to_int (&impl->scale),
+                         surface->width, surface->height,
+                         *width, *height);
     }
   else
     {
-      GDK_DISPLAY_DEBUG (display, OPENGL, "Using fractional scale %g for EGL window", gdk_fractional_scale_to_double (&impl->scale));
-
       *width = gdk_fractional_scale_scale (&impl->scale, surface->width),
       *height = gdk_fractional_scale_scale (&impl->scale, surface->height);
+
+      GDK_DISPLAY_DEBUG (display, OPENGL, "Using fractional scale %g for EGL window (%d %d => %d %d)",
+                         gdk_fractional_scale_to_double (&impl->scale),
+                         surface->width, surface->height,
+                         *width, *height);
     }
 }
 
@@ -396,6 +403,17 @@ gdk_wayland_surface_request_frame (GdkSurface *surface)
   self->frame_callback = wl_surface_frame (self->display_server.wl_surface);
   wl_proxy_set_queue ((struct wl_proxy *) self->frame_callback, NULL);
   wl_callback_add_listener (self->frame_callback, &frame_listener, surface);
+
+  if (self->presentation_time == NULL)
+    {
+      GdkWaylandDisplay *wayland_display = GDK_WAYLAND_DISPLAY (gdk_surface_get_display (surface));
+      self->presentation_time = gdk_wayland_presentation_time_new (wayland_display);
+    }
+
+  gdk_wayland_presentation_time_track (self->presentation_time,
+                                       clock,
+                                       self->display_server.wl_surface,
+                                       gdk_frame_clock_get_frame_counter (clock));
 
   for (gsize i = 0; i < gdk_surface_get_n_subsurfaces (surface); i++)
     {
@@ -1042,6 +1060,7 @@ gdk_wayland_surface_hide_surface (GdkSurface *surface)
 
   unmap_popups_for_surface (surface);
 
+  g_clear_pointer (&impl->presentation_time, gdk_wayland_presentation_time_free);
   g_clear_pointer (&impl->frame_callback, wl_callback_destroy);
   if (impl->awaiting_frame_frozen)
     {

@@ -192,6 +192,13 @@ compute_smooth_frame_time (GdkFrameClock *clock,
    *        and new_frame_time >= old_frame_time. */
   frames_passed = (new_frame_time - smoothed_frame_time_base + frame_interval / 2) / frame_interval;
 
+  if (frames_passed > 1)
+    gdk_profiler_add_markf ((smoothed_frame_time_base - (frame_interval * (frames_passed-1))) * 1000L,
+                            frame_interval * (frames_passed-1) * 1000L,
+                            "Dropped Frames",
+                            "%u frames may have been dropped",
+                            frames_passed-1);
+
   /* We use an approximately whole number of frames in the future from
    * last smoothed frame time. This way we avoid minor jitter in the
    * frame times making the animation speed uneven, but still animate
@@ -548,7 +555,7 @@ gdk_frame_clock_paint_idle (void *data)
               priv->smoothed_frame_time_period = frame_interval;
               priv->smoothed_frame_time_reported = priv->smoothed_frame_time_base;
 
-              _gdk_frame_clock_begin_frame (clock);
+              _gdk_frame_clock_begin_frame (clock, priv->frame_time);
               /* Note "current" is different now so timings != prev_timings */
               timings = gdk_frame_clock_get_current_timings (clock);
 

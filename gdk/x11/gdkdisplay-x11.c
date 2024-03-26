@@ -1430,6 +1430,8 @@ gdk_x11_display_open (const char *display_name)
   int maj, min;
   char *cm_name;
   gboolean frame_extents;
+  gboolean rgba;
+  gboolean composited;
 
   XInitThreads ();
 
@@ -1646,7 +1648,10 @@ gdk_x11_display_open (const char *display_name)
 
   frame_extents = gdk_x11_screen_supports_net_wm_hint (gdk_x11_display_get_screen (display),
                                                        g_intern_static_string ("_GTK_FRAME_EXTENTS"));
-  gdk_display_set_shadow_width (display, frame_extents);
+  rgba = gdk_display_is_rgba (display);
+  composited = gdk_display_is_composited (display);
+
+  gdk_display_set_shadow_width (display, frame_extents && rgba && composited);
 
   gdk_display_emit_opened (display);
 
@@ -3009,6 +3014,8 @@ gdk_x11_display_init_gl_backend (GdkX11Display  *self,
   egl_display = gdk_display_get_egl_display (display);
 
   self->egl_version = epoxy_egl_version (egl_display);
+
+  XFree (visinfo);
 
   return TRUE;
 }

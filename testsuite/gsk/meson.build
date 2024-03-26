@@ -74,6 +74,7 @@ compare_render_tests = [
   'empty-texture',
   'empty-transform',
   'fill',
+  'fill2',
   'fill-clipped-nogl',
   'fill-fractional-translate-gradient-nogl',
   'fill-fractional-translate-nogl',
@@ -82,6 +83,12 @@ compare_render_tests = [
   'fill-with-3d-contents-nogl-nocairo',
   'glyph-cache-overflow',
   'glyph-cache-overflow-slices',
+  'glyph-hinting-none',
+  'glyph-hinting-slight',
+  'glyph-hinting-position-nogl-nocairo',
+  'glyph-subpixel-position',
+  'glyph-scaling',
+  'glyph-antialias',
   'huge-height',
   'huge-width',
   'inset-shadow-multiple',
@@ -98,6 +105,7 @@ compare_render_tests = [
   'mask-texture-color-alpha',
   'mipmap-generation-later',
   'nested-rounded-clips',
+  'offscreen-forced-downscale',
   'offscreen-fractional-translate-nogl',
   'offscreen-pixel-alignment-nogl-nocairo',
   'offscreen-pixel-alignment2',
@@ -128,6 +136,7 @@ compare_render_tests = [
   'repeat-scaling',
   'repeat-texture',
   'repeating-gradient-scaled',
+  'reuse-of-texture-nested-in-offscreens',
   'rounded-clip-with-huge-bounds-nogl',
   'scale-textures-negative-ngl',
   'scale-up-down',
@@ -143,6 +152,7 @@ compare_render_tests = [
   'shadow-offset-clip',
   'shadow-offset-to-outside-clip',
   'shadow-opacity',
+  'shadow-replay-nocairo',
   'shrink-rounded-border',
   'stroke',
   'stroke-clipped-nogl',
@@ -178,6 +188,7 @@ informative_render_tests = [
   'empty-text',
   'huge-glyph',
   'rounded-clip-in-clip-nocairo', # both cairo and gl fail this one
+  'text-missing-glyph', # https://gitlab.gnome.org/GNOME/pango/-/merge_requests/718
 ]
 
 renderers = [
@@ -193,6 +204,7 @@ compare_xfails_small_texture = [
   'big-checkerboard-scaled-down',
   'big-checkerboard-scaled-down2',
   'repeat-repeats', # only fails when rotated
+  'glyph-scaling',
 ]
 
 variants = {
@@ -203,17 +215,38 @@ variants = {
   'masked': '--mask',
   'replayed': '--replay',
   'clipped': '--clip',
+  'colorflipped': '--colorflip',
 }
 
 compare_xfails = {
   'ngl': {
-           'repeat-scaling': ['clipped'], # 6429
-           'radial-gradient-with-64-colorstops': ['clipped'],
-           'blur-child-bounds-oversize-nogl': ['clipped'], # 6450
-         },
+    # the gradients are prone to rounding errors which become
+    # more pronounced in small clips, it seems
+    'radial-gradient-with-64-colorstops': ['clipped', 'colorflipped'],
+    'conic-gradient-with-64-colorstops': ['clipped', 'colorflipped'],
+    'blur-child-bounds-oversize-nogl': ['clipped'], # 6450
+    'rounded-clip-with-huge-bounds-nogl': ['plain','flipped','rotated','repeated','masked','replayed','clipped','colorflipped'], # 6532
+    'big-checkerboard': ['clipped'], # 6444
+  },
   'vulkan': {
-              'big-checkerboard': ['clipped'], # 6444
-            },
+    'radial-gradient-with-64-colorstops': ['clipped', 'colorflipped'],
+    'conic-gradient-with-64-colorstops': ['clipped', 'colorflipped'],
+    'blur-child-bounds-oversize-nogl': ['clipped'], # 6450
+    'repeat-repeats-nested-nogl': ['clipped'], # 6522
+    'repeating-radial-gradient-edge-colors': ['colorflipped'],
+    'rounded-clip-with-huge-bounds-nogl': ['plain','flipped','rotated','repeated','masked','replayed','clipped','colorflipped'], # 6532
+    'big-checkerboard': ['clipped'], # 6444
+  },
+  'gl': {
+    # 6525
+    'container-single-child-offscreen-for-opacity': ['rotated'],
+    'cross-fade-in-opacity': ['rotated'],
+    'mask-modes-in-opacity': ['rotated'],
+    'opacity-overlapping-children': ['rotated'],
+    'scaled-texture-scale': ['rotated'],
+    'shadow-opacity': ['rotated'],
+    'texture-scale-nearest-vs-linear': ['rotated'],
+  },
 }
 
 foreach renderer : renderers
@@ -331,6 +364,8 @@ node_parser_tests = [
   'empty-shadow.ref.node',
   'empty-stroke.node',
   'empty-stroke.ref.node',
+  'empty-subsurface.node',
+  'empty-subsurface.ref.node',
   'empty-text.node',
   'empty-text.ref.node',
   'empty-texture.node',
@@ -372,6 +407,7 @@ node_parser_tests = [
   'stroke.node',
   'stroke.ref.node',
   'testswitch.node',
+  'text.node',
   'text-color.node',
   'text-fail.node',
   'text-fail.ref.node',
@@ -381,6 +417,11 @@ node_parser_tests = [
   'text-font-errors.node',
   'text-font-errors.ref.node',
   'text-font-errors.errors',
+  'text-font-options.node',
+  'text-font-options.ref.node',
+  'text-font-options-error.node',
+  'text-font-options-error.ref.node',
+  'text-font-options-error.ref.errors',
   'text-no-color.node',
   'texture-fail.node',
   'texture-fail.ref.node',
@@ -411,7 +452,7 @@ foreach test : node_parser_tests
         'G_TEST_BUILDDIR=@0@'.format(meson.current_build_dir())
       ],
       protocol: 'exitcode',
-      suite: 'gsk',
+      suite: [ 'gsk', 'gsk-nodeparser' ]
     )
   endif
 endforeach
@@ -432,6 +473,9 @@ if os_linux
     'stop_offloading.node',
     'source.node',
     'nested.node',
+    'clipped.node',
+    'not-clipped.node',
+    'complex-clip.node',
   ]
 
   foreach test : offload_tests

@@ -1,11 +1,194 @@
-Overview of Changes in 4.13.8, xx-xx-xxxx
+Overview of Changes in 4.14.2, xx-xx-xxxx
+=========================================
+
+Overview of Changes in 4.14.1, 16-03-2024
+=========================================
+
+* GtkTextView:
+ - Fix a mixup of cursor and anchor when retrieving surrounding text
+   in input methods
+
+* Printing:
+ - Avoid accessing freed printers
+
+* Accessibility:
+ - Fix memory leaks
+
+* GDK:
+ - Rename the GDK_VULKAN_SKIP environment variable to GDK_VULKAN_DISABLE
+ - Add a GDK_GL_DISABLE environment variable
+
+* GSK:
+ - Rename the GSK_GPU_SKIP environment variable to GSK_GPU_DISABLE
+ - Speed up handling of repeated ops, which should help for text
+ - Speed up the inner loop of text node conversion
+ - Drop the glyph-align optimization flag
+ - ngl: Avoid reusing frames while they are in use
+ - Fix flickering thumbnails in nautilus
+ - Speed up buffer handling in both ngl and Vulkan
+
+* Demos:
+ - Skip demos using gl shaders when we're not using the gl renderer
+
+* Build:
+ - Fix some ubsan warnings
+ - Avoid zink in ci since it spams stderr
+
+* Translation updates:
+ Czech
+ German
+ Korean
+ Russian
+
+
+Overview of Changes in 4.14.0, 12-03-2024
 =========================================
 
 Note: The new renderers and dmabuf support are using graphics drivers
 in different ways than the old gl renderer, and trigger new driver bugs,
 (see for example https://gitlab.gnome.org/GNOME/gtk/-/issues/6418 and
 https://gitlab.gnome.org/GNOME/gtk/-/issues/6388). Therefore, it is
-recommended to use the latest mesa release (24.0) with the new renderers.
+recommended to use the latest mesa release (24.x) with the new renderers.
+
+* GtkTextView:
+ - Don't snapshot children twice
+ - Don't blink the cursor when hidden
+
+* GtkEmojiChooser:
+ - Fix presentation selector handling
+
+* GtkSnapshot:
+ - Fix wrong nodes with transformed shadows
+
+* GtkIMContext:
+ - Make gtk_im_context_activate_osk public
+
+* Accessibility:
+ - Implement get_contents_at for all our text widgets
+ - Add GtkAccessibleText.get_default_attributes
+
+* GSK:
+ - Don't fall back to cairo for software rendering. gl+llvmpipe is better
+ - Round vertical glyph position to a device pixel position if the font is hinted
+ - Fix problems with clip handling
+ - Make vulkan and ngl match their font handling
+ - Fix some corner-cases with offloading and clips
+ - Fix problem with rendering of missing glyphs in hinted fonts
+
+* MacOs:
+ - Implement cursor-from-texture
+
+* Translation updates:
+ Basque
+ British English
+ French
+ Indonesian
+ Kazakh
+ Latvian
+ Lithuanian
+ Norwegian Bokmål
+ Slovenian
+ Spanish
+ Turkish
+
+
+Overview of Changes in 4.13.9, 02-03-2024
+=========================================
+
+* GtkEditable:
+ - Fix preconditions to be not too strict
+
+* GtkEmojiChooser:
+ - Support search in the locale as well as in English
+
+* GtkIconTheme:
+ - Make gtk_icon_paintable_new_for_file support symbolics
+
+* GtkVideo:
+ - Fix a problem with cursor handling that could lead to crashes
+
+* Accessibility:
+ - Fix GetCharacterAtOffset implementation
+ - Add a Terminal role
+ - Make TextCaretMoved match gtk3
+ - Support multiple levels of GtkEditable delegates
+
+* GSK:
+ - Make the node parser more flexible for text nodes
+ - Change the way font scaling is handled to avoid clipping
+ - Fix handling of missing glyphs in the new renderers
+
+* X11:
+ - Don't claim to support shadows without a compositor
+
+* Wayland:
+ - Fix handling of output scales
+
+* Tools:
+ - Add a compare command to gtk4-rendernode-tool
+
+* Build:
+ - Fix some ubsan complaints
+
+* Translation updates:
+ Basque
+ British English
+ Catalan
+ Finnish
+ Galician
+ Georgian
+ Hebrew
+ Indonesian
+ Kazakh
+ Latvian
+ Lithuanian
+ Persian
+ Polish
+ Russian
+ Slovenian
+ Spanish
+ Turkish
+ Ukrainian
+
+
+Overview of Changes in 4.13.8, 20-02-2024
+=========================================
+
+* Accessibility:
+ - Add a GtkAccessibleText interface for allowing 3rd party
+   text widgets (notably vte) to be accessible
+ - Avoid duplicate accessible descriptions
+ - Fix GetAccessibleAtPoint
+
+* GSK:
+ - Avoid offscreens for disjoint containers
+ - Don't use the gpu renderers with llvmpipe
+ - Fix various rendering issues found by tests
+ - Allow unnormalized node bounds again
+ - Fix a broken case of rounded-rect intersection
+ - Fix handling of external textures in gpu renderers
+ - Make gpu renderers work with WGL on Windows
+
+* build:
+ - Allow building without dmabuf support on (old) Linux
+
+* X11:
+ - Fix monitor enter/leave signals
+
+* Translation updates:
+ Basque
+ Brazilian Portuguese
+ Catalan
+ Czech
+ Galician
+ Georgian
+ Hebrew
+ Lithuanian
+ Persian
+ Russian
+ Turkish
+ Ukrainian
+
 
 Overview of Changes in 4.13.7, 11-02-2024
 =========================================

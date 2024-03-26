@@ -488,12 +488,14 @@ gsk_gl_command_queue_new (GdkGLContext      *context,
       int max_texture_size = atoi (g_getenv ("GSK_MAX_TEXTURE_SIZE"));
       if (max_texture_size == 0)
         {
-          g_warning ("Failed to parse GSK_MAX_TEXTURE_SIZE");
+          g_warning ("Failed to parse %s", "GSK_MAX_TEXTURE_SIZE");
         }
       else
         {
           max_texture_size = MAX (max_texture_size, 512);
-          GSK_DEBUG(OPENGL, "Limiting max texture size to %d", max_texture_size);
+          GSK_DEBUG (RENDERER,
+                     "Limiting texture size in the GL renderer to %d (via %s)",
+                     max_texture_size, "GSK_MAX_TEXTURE_SIZE");
           self->max_texture_size = MIN (self->max_texture_size, max_texture_size);
         }
     }
@@ -1066,8 +1068,7 @@ gsk_gl_command_queue_execute (GskGLCommandQueue    *self,
   gsk_gl_profiler_begin_gpu_region (self->gl_profiler);
   gsk_profiler_timer_begin (self->profiler, self->metrics.cpu_time);
 
-  glEnable (GL_DEPTH_TEST);
-  glDepthFunc (GL_LEQUAL);
+  glDisable (GL_DEPTH_TEST);
 
   /* Pre-multiplied alpha */
   glEnable (GL_BLEND);
@@ -1623,7 +1624,7 @@ gsk_gl_command_queue_do_upload_texture_chunk (GskGLCommandQueue *self,
     {
       glTexSubImage2D (GL_TEXTURE_2D, 0, x, y, width, height, gl_format, gl_type, data);
     }
-  else if (stride % bpp == 0 && gdk_gl_context_has_unpack_subimage (self->context))
+  else if (stride % bpp == 0 && gdk_gl_context_has_feature (self->context, GDK_GL_FEATURE_UNPACK_SUBIMAGE))
     {
       glPixelStorei (GL_UNPACK_ROW_LENGTH, stride / bpp);
 

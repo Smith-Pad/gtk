@@ -40,6 +40,7 @@ struct _GskGpuFramePrivate
 
   GskGpuOps ops;
   GskGpuOp *first_op;
+  GskGpuOp *last_op;
 
   GskGpuBuffer *vertex_buffer;
   guchar *vertex_buffer_data;
@@ -70,6 +71,8 @@ gsk_gpu_frame_default_cleanup (GskGpuFrame *self)
       gsk_gpu_op_finish (op);
     }
   gsk_gpu_ops_set_size (&priv->ops, 0);
+
+  priv->last_op = NULL;
 }
 
 static void
@@ -248,27 +251,35 @@ gsk_gpu_frame_sort_render_pass (GskGpuFrame *self,
                                 SortData    *sort_data)
 {
   SortData subpasses = { { NULL, NULL }, { NULL, NULL } };
+  SortData pass = { { NULL, NULL }, { NULL, NULL } };
+
+  if (op->op_class->stage == GSK_GPU_STAGE_BEGIN_PASS)
+    {
+      pass.command.first = op;
+      pass.command.last = op;
+      op = op->next;
+    }
 
   while (op)
     {
       switch (op->op_class->stage)
       {
         case GSK_GPU_STAGE_UPLOAD:
-          if (sort_data->upload.first == NULL)
-            sort_data->upload.first = op;
+          if (pass.upload.first == NULL)
+            pass.upload.first = op;
           else
-            sort_data->upload.last->next = op;
-          sort_data->upload.last = op;
+            pass.upload.last->next = op;
+          pass.upload.last = op;
           op = op->next;
           break;
 
         case GSK_GPU_STAGE_COMMAND:
         case GSK_GPU_STAGE_SHADER:
-          if (sort_data->command.first == NULL)
-            sort_data->command.first = op;
+          if (pass.command.first == NULL)
+            pass.command.first = op;
           else
-            sort_data->command.last->next = op;
-          sort_data->command.last = op;
+            pass.command.last->next = op;
+          pass.command.last = op;
           op = op->next;
           break;
 
@@ -282,19 +293,13 @@ gsk_gpu_frame_sort_render_pass (GskGpuFrame *self,
           break;
 
         case GSK_GPU_STAGE_BEGIN_PASS:
-          if (subpasses.command.first == NULL)
-            subpasses.command.first = op;
-          else
-            subpasses.command.last->next = op;
-          subpasses.command.last = op;
-
           /* append subpass to existing subpasses */
-          op = gsk_gpu_frame_sort_render_pass (self, op->next, &subpasses);
+          op = gsk_gpu_frame_sort_render_pass (self, op, &subpasses);
           break;
 
         case GSK_GPU_STAGE_END_PASS:
-          sort_data->command.last->next = op;
-          sort_data->command.last = op;
+          pass.command.last->next = op;
+          pass.command.last = op;
           op = op->next;
           goto out;
 
@@ -305,22 +310,38 @@ gsk_gpu_frame_sort_render_pass (GskGpuFrame *self,
     }
 
 out:
-  /* prepend subpasses to the current pass */
+  /* append to the sort data, first the subpasses, then the current pass */
   if (subpasses.upload.first)
     {
       if (sort_data->upload.first != NULL)
-        subpasses.upload.last->next = sort_data->upload.first;
+        sort_data->upload.last->next = subpasses.upload.first;
       else
-        sort_data->upload.last = subpasses.upload.last;
-      sort_data->upload.first = subpasses.upload.first;
+        sort_data->upload.first = subpasses.upload.first;
+      sort_data->upload.last = subpasses.upload.last;
+    }
+  if (pass.upload.first)
+    {
+      if (sort_data->upload.first != NULL)
+        sort_data->upload.last->next = pass.upload.first;
+      else
+        sort_data->upload.first = pass.upload.first;
+      sort_data->upload.last = pass.upload.last;
     }
   if (subpasses.command.first)
     {
       if (sort_data->command.first != NULL)
-        subpasses.command.last->next = sort_data->command.first;
+        sort_data->command.last->next = subpasses.command.first;
       else
-        sort_data->command.last = subpasses.command.last;
-      sort_data->command.first = subpasses.command.first;
+        sort_data->command.first = subpasses.command.first;
+      sort_data->command.last = subpasses.command.last;
+    }
+  if (pass.command.first)
+    {
+      if (sort_data->command.first != NULL)
+        sort_data->command.last->next = pass.command.first;
+      else
+        sort_data->command.first = pass.command.first;
+      sort_data->command.last = pass.command.last;
     }
 
   return op;
@@ -331,8 +352,13 @@ gsk_gpu_frame_sort_ops (GskGpuFrame *self)
 {
   GskGpuFramePrivate *priv = gsk_gpu_frame_get_instance_private (self);
   SortData sort_data = { { NULL, }, };
-  
-  gsk_gpu_frame_sort_render_pass (self, priv->first_op, &sort_data);
+  GskGpuOp *op;
+
+  op = priv->first_op;
+  while (op)
+    {
+      op = gsk_gpu_frame_sort_render_pass (self, op, &sort_data);
+    }
 
   if (sort_data.upload.first)
     {
@@ -343,6 +369,8 @@ gsk_gpu_frame_sort_ops (GskGpuFrame *self)
     priv->first_op = sort_data.command.first;
   if (sort_data.command.last)
     sort_data.command.last->next = NULL;
+
+  priv->last_op = NULL;
 }
 
 gpointer
@@ -360,7 +388,17 @@ gsk_gpu_frame_alloc_op (GskGpuFrame *self,
                       NULL,
                       size);
 
-  return gsk_gpu_ops_index (&priv->ops, pos);
+  priv->last_op = (GskGpuOp *) gsk_gpu_ops_index (&priv->ops, pos);
+
+  return priv->last_op;
+}
+
+GskGpuOp *
+gsk_gpu_frame_get_last_op (GskGpuFrame *self)
+{
+  GskGpuFramePrivate *priv = gsk_gpu_frame_get_instance_private (self);
+
+  return priv->last_op;
 }
 
 GskGpuImage *
@@ -426,7 +464,7 @@ gsk_gpu_frame_reserve_vertex_data (GskGpuFrame *self,
       if (priv->vertex_buffer_data)
         {
           memcpy (new_data, priv->vertex_buffer_data, old_size);
-          gsk_gpu_buffer_unmap (priv->vertex_buffer);
+          gsk_gpu_buffer_unmap (priv->vertex_buffer, old_size);
         }
       g_object_unref (priv->vertex_buffer);
       priv->vertex_buffer = new_buffer;
@@ -434,7 +472,7 @@ gsk_gpu_frame_reserve_vertex_data (GskGpuFrame *self,
     }
 
   priv->vertex_buffer_used = size_needed;
-  
+
   return size_needed - size;
 }
 
@@ -480,7 +518,7 @@ gsk_gpu_frame_write_storage_buffer (GskGpuFrame  *self,
     {
       g_assert (offset > 0);
 
-      gsk_gpu_buffer_unmap (priv->storage_buffer);
+      gsk_gpu_buffer_unmap (priv->storage_buffer, 0);
       g_clear_object (&priv->storage_buffer);
       priv->storage_buffer_data = 0;
       priv->storage_buffer_used = 0;
@@ -503,6 +541,12 @@ gboolean
 gsk_gpu_frame_is_busy (GskGpuFrame *self)
 {
   return GSK_GPU_FRAME_GET_CLASS (self)->is_busy (self);
+}
+
+void
+gsk_gpu_frame_wait (GskGpuFrame *self)
+{
+  GSK_GPU_FRAME_GET_CLASS (self)->wait (self);
 }
 
 static void
@@ -591,14 +635,14 @@ gsk_gpu_frame_submit (GskGpuFrame *self)
 
   if (priv->vertex_buffer)
     {
-      gsk_gpu_buffer_unmap (priv->vertex_buffer);
+      gsk_gpu_buffer_unmap (priv->vertex_buffer, priv->vertex_buffer_used);
       priv->vertex_buffer_data = NULL;
       priv->vertex_buffer_used = 0;
     }
 
   if (priv->storage_buffer_data)
     {
-      gsk_gpu_buffer_unmap (priv->storage_buffer);
+      gsk_gpu_buffer_unmap (priv->storage_buffer, priv->storage_buffer_used);
       priv->storage_buffer_data = NULL;
       priv->storage_buffer_used = 0;
     }

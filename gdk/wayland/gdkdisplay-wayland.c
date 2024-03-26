@@ -58,6 +58,7 @@
 #include <wayland/xdg-foreign-unstable-v2-client-protocol.h>
 #include <wayland/server-decoration-client-protocol.h>
 #include "linux-dmabuf-unstable-v1-client-protocol.h"
+#include "presentation-time-client-protocol.h"
 
 #include "wm-button-layout-translation.h"
 
@@ -95,7 +96,6 @@
 #define GTK_SHELL1_VERSION       5
 #define OUTPUT_VERSION_WITH_DONE 2
 #define NO_XDG_OUTPUT_DONE_SINCE_VERSION 3
-#define XDG_ACTIVATION_VERSION   1
 #define OUTPUT_VERSION           3
 
 #ifdef HAVE_TOPLEVEL_STATE_SUSPENDED
@@ -585,21 +585,25 @@ gdk_registry_handle_global (void               *data,
     {
       display_wayland->xdg_activation =
         wl_registry_bind (display_wayland->wl_registry, id,
-                          &xdg_activation_v1_interface,
-                          MIN (version, XDG_ACTIVATION_VERSION));
+                          &xdg_activation_v1_interface, 1);
     }
   else if (strcmp (interface, "wp_fractional_scale_manager_v1") == 0)
     {
       display_wayland->fractional_scale =
         wl_registry_bind (display_wayland->wl_registry, id,
-                          &wp_fractional_scale_manager_v1_interface,
-                          MIN (version, 1));
+                          &wp_fractional_scale_manager_v1_interface, 1);
     }
   else if (strcmp (interface, "wp_viewporter") == 0)
     {
       display_wayland->viewporter =
         wl_registry_bind (display_wayland->wl_registry, id,
-                          &wp_viewporter_interface,
+                          &wp_viewporter_interface, 1);
+    }
+  else if (strcmp (interface, "wp_presentation") == 0)
+    {
+      display_wayland->presentation =
+        wl_registry_bind (display_wayland->wl_registry, id,
+                          &wp_presentation_interface,
                           MIN (version, 1));
     }
 
@@ -700,7 +704,8 @@ _gdk_wayland_display_open (const char *display_name)
   process_on_globals_closures (display_wayland);
 
   /* Wait for initializing to complete. This means waiting for all
-   * asynchronous roundtrips that were triggered during initial roundtrip. */
+   * asynchronous roundtrips that were triggered during initial roundtrip.
+   */
   while (display_wayland->async_roundtrips != NULL)
     {
       if (wl_display_dispatch (display_wayland->wl_display) < 0)
@@ -708,6 +713,18 @@ _gdk_wayland_display_open (const char *display_name)
           g_object_unref (display);
           return NULL;
         }
+    }
+
+  /* Check that we got all the required globals */
+  if (display_wayland->compositor == NULL ||
+      display_wayland->shm == NULL ||
+      display_wayland->data_device_manager == NULL)
+    {
+      g_warning ("The Wayland compositor does not provide one or more of the required interfaces, "
+                 "not using Wayland display");
+      g_object_unref (display);
+
+      return NULL;
     }
 
   if (display_wayland->xdg_wm_base_id)
@@ -799,6 +816,7 @@ gdk_wayland_display_dispose (GObject *object)
   g_clear_pointer (&display_wayland->xdg_activation, xdg_activation_v1_destroy);
   g_clear_pointer (&display_wayland->fractional_scale, wp_fractional_scale_manager_v1_destroy);
   g_clear_pointer (&display_wayland->viewporter, wp_viewporter_destroy);
+  g_clear_pointer (&display_wayland->presentation, wp_presentation_destroy);
   g_clear_pointer (&display_wayland->linux_dmabuf, zwp_linux_dmabuf_v1_destroy);
   g_clear_pointer (&display_wayland->linux_dmabuf_feedback, zwp_linux_dmabuf_feedback_v1_destroy);
   if (display_wayland->linux_dmabuf_formats)
@@ -2437,12 +2455,13 @@ apply_monitor_change (GdkWaylandMonitor *monitor)
   gboolean needs_scaling = FALSE;
   double scale;
 
-  if (monitor->xdg_output_done)
+  if (monitor_has_xdg_output (monitor) &&
+      monitor->xdg_output_geometry.width != 0  &&
+      monitor->xdg_output_geometry.height != 0)
     {
       logical_geometry = monitor->xdg_output_geometry;
-      needs_scaling =
-        logical_geometry.width == monitor->output_geometry.width ||
-        logical_geometry.height == monitor->output_geometry.height;
+      needs_scaling = logical_geometry.width == monitor->output_geometry.width &&
+                      logical_geometry.height == monitor->output_geometry.height;
     }
   else
     {
@@ -2453,6 +2472,7 @@ apply_monitor_change (GdkWaylandMonitor *monitor)
   if (needs_scaling)
     {
       int scale_factor = gdk_monitor_get_scale_factor (GDK_MONITOR (monitor));
+
       logical_geometry.y /= scale_factor;
       logical_geometry.x /= scale_factor;
       logical_geometry.width /= scale_factor;

@@ -183,6 +183,7 @@ gtk_at_spi_socket_get_bounds (GtkAccessible *accessible,
                               int           *height)
 {
   GtkAccessible *accessible_parent;
+  gboolean res = FALSE;
 
   g_assert (GTK_IS_AT_SPI_SOCKET (accessible));
 
@@ -190,7 +191,11 @@ gtk_at_spi_socket_get_bounds (GtkAccessible *accessible,
   if (accessible_parent == NULL)
     return FALSE;
 
-  return gtk_accessible_get_bounds (accessible_parent, x, y, width, height);
+  res = gtk_accessible_get_bounds (accessible_parent, x, y, width, height);
+
+  g_object_unref (accessible_parent);
+
+  return res;
 }
 
 static void
@@ -418,8 +423,8 @@ gtk_at_spi_socket_embed (GtkAtSpiSocket  *self,
  * usually done through a side channel with the remote side, for
  * example using sockets, or reading the output of a subprocess.
  *
- * The remote accessible object at @object_path must be a must
- * have an `org.a11y.atspi.Socket` interface with the `Embedded()`
+ * The remote accessible object at @object_path must support
+ * the `org.a11y.atspi.Socket` interface with the `Embedded()`
  * method.
  *
  * This constructor can fail, most notably if the accessibility
@@ -463,7 +468,7 @@ gtk_at_spi_socket_get_bus_name (GtkAtSpiSocket *self)
  * gtk_at_spi_socket_get_object_path:
  * @self: a #GtkAtSpiSocket
  *
- * Retrieves the object path of the remove accessible object that
+ * Retrieves the object path of the remote accessible object that
  * the socket is connected to.
  *
  * Returns: (transfer none): the object path of the socket remote

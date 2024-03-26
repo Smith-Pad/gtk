@@ -208,6 +208,24 @@ gtk_at_context_real_unrealize (GtkATContext *self)
 }
 
 static void
+gtk_at_context_real_update_caret_position (GtkATContext *self)
+{
+}
+
+static void
+gtk_at_context_real_update_selection_bound (GtkATContext *self)
+{
+}
+
+static void
+gtk_at_context_real_update_text_contents (GtkATContext *self,
+                                          GtkAccessibleTextContentChange change,
+                                          unsigned int start,
+                                          unsigned int end)
+{
+}
+
+static void
 gtk_at_context_class_init (GtkATContextClass *klass)
 {
   GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
@@ -223,6 +241,9 @@ gtk_at_context_class_init (GtkATContextClass *klass)
   klass->platform_change = gtk_at_context_real_platform_change;
   klass->bounds_change = gtk_at_context_real_bounds_change;
   klass->child_change = gtk_at_context_real_child_change;
+  klass->update_caret_position = gtk_at_context_real_update_caret_position;
+  klass->update_selection_bound = gtk_at_context_real_update_selection_bound;
+  klass->update_text_contents = gtk_at_context_real_update_text_contents;
 
   /**
    * GtkATContext:accessible-role: (attributes org.gtk.Property.get=gtk_at_context_get_accessible_role)
@@ -520,6 +541,7 @@ gtk_at_context_set_accessible_parent (GtkATContext *self,
           parent_context = get_parent_context (self);
           if (parent_context && parent_context->realized)
             gtk_at_context_realize (self);
+          g_clear_object (&parent_context);
         }
     }
 }
@@ -1369,9 +1391,25 @@ gtk_at_context_get_text_accumulate (GtkATContext          *self,
     {
       const char *text = gtk_widget_get_tooltip_text (GTK_WIDGET (self->accessible));
       if (text && not_just_space (text))
-        if (!check_duplicates || ((property == GTK_ACCESSIBLE_PROPERTY_LABEL && strcmp(text, gtk_at_context_get_description_internal (self, FALSE)) != 0)
-          || (property == GTK_ACCESSIBLE_PROPERTY_DESCRIPTION && strcmp(text, gtk_at_context_get_name_internal (self, FALSE)) != 0)))
-        append_with_space (res, text);
+        {
+          gboolean append = !check_duplicates;
+
+          if (!append)
+            {
+              char *description = gtk_at_context_get_description_internal (self, FALSE);
+              char *name = gtk_at_context_get_name_internal (self, FALSE);
+
+              append =
+                (property == GTK_ACCESSIBLE_PROPERTY_LABEL && strcmp (text, description) != 0) ||
+                (property == GTK_ACCESSIBLE_PROPERTY_DESCRIPTION && strcmp (text, name) != 0);
+
+              g_free (description);
+              g_free (name);
+            }
+
+          if (append)
+            append_with_space (res, text);
+        }
     }
 }
 
@@ -1507,4 +1545,34 @@ gtk_at_context_announce (GtkATContext                      *self,
     return;
 
   GTK_AT_CONTEXT_GET_CLASS (self)->announce (self, message, priority);
+}
+
+void
+gtk_at_context_update_caret_position (GtkATContext *self)
+{
+  if (!self->realized)
+    return;
+
+  GTK_AT_CONTEXT_GET_CLASS (self)->update_caret_position (self);
+}
+
+void
+gtk_at_context_update_selection_bound (GtkATContext *self)
+{
+  if (!self->realized)
+    return;
+
+  GTK_AT_CONTEXT_GET_CLASS (self)->update_selection_bound (self);
+}
+
+void
+gtk_at_context_update_text_contents (GtkATContext *self,
+                                     GtkAccessibleTextContentChange change,
+                                     unsigned int start,
+                                     unsigned int end)
+{
+  if (!self->realized)
+    return;
+
+  GTK_AT_CONTEXT_GET_CLASS (self)->update_text_contents (self, change, start, end);
 }
