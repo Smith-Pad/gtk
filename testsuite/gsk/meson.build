@@ -104,6 +104,7 @@ compare_render_tests = [
   'mask-modes-with-alpha',
   'mask-texture-color-alpha',
   'mipmap-generation-later',
+  'mipmap-with-1x1',
   'nested-rounded-clips',
   'offscreen-forced-downscale',
   'offscreen-fractional-translate-nogl',
@@ -170,6 +171,7 @@ compare_render_tests = [
   'texture-scale-filters-nocairo',
   'texture-scale-magnify-10000x',
   'texture-scale-magnify-rotate',
+  'texture-scale-nearest-noninteger-scaled-nogl',
   'texture-scale-nearest-vs-linear',
   'texture-scale-offset',
   'texture-scale-stripes',
@@ -476,6 +478,8 @@ if os_linux
     'clipped.node',
     'not-clipped.node',
     'complex-clip.node',
+    'background.node',
+    'background2.node',
   ]
 
   foreach test : offload_tests
@@ -485,10 +489,10 @@ if os_linux
           join_paths(meson.current_source_dir(), 'offload', test)
         ],
         env: [
-          'GSK_RENDERER=opengl',
           'GTK_A11Y=test',
           'G_TEST_SRCDIR=@0@'.format(meson.current_source_dir()),
-          'G_TEST_BUILDDIR=@0@'.format(meson.current_build_dir())
+          'G_TEST_BUILDDIR=@0@'.format(meson.current_build_dir()),
+          'GDK_DEBUG=force-offload',
         ],
         protocol: 'exitcode',
         suite: ['gsk', 'offload'],

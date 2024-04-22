@@ -39,6 +39,7 @@
 #include "gdk/gdksubsurfaceprivate.h"
 #include "gdk/gdktextureprivate.h"
 #include "gdk/gdktexturedownloaderprivate.h"
+#include "gdk/gdkrgbaprivate.h"
 
 #include <cairo.h>
 #ifdef CAIRO_HAS_SVG_SURFACE
@@ -5824,7 +5825,7 @@ gsk_text_node_new (PangoFont              *font,
   PangoGlyphInfo *glyph_infos;
   int n;
 
-  gsk_get_unhinted_glyph_string_extents (glyphs, font, &ink_rect);
+  pango_glyph_string_extents (glyphs, font, &ink_rect, NULL);
 
   /* Don't create nodes with empty bounds */
   if (ink_rect.width == 0 || ink_rect.height == 0)
