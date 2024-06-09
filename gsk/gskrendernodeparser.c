@@ -54,6 +54,8 @@
 #include <pango/pangofc-fontmap.h>
 #endif
 
+#include <hb-subset.h>
+
 #include <glib/gstdio.h>
 
 typedef struct _Context Context;
@@ -946,22 +948,21 @@ create_ascii_glyphs (PangoFont *font)
   PangoGlyphString *result, *glyph_string;
   guint i;
 
-  coverage = pango_font_get_coverage (font, language);
-  for (i = MIN_ASCII_GLYPH; i < MAX_ASCII_GLYPH; i++)
-    {
-      if (!pango_coverage_get (coverage, i))
-        break;
-    }
-  g_object_unref (coverage);
-  if (i < MAX_ASCII_GLYPH)
-    return NULL;
-
   result = pango_glyph_string_new ();
+
+  coverage = pango_font_get_coverage (font, language);
+
   pango_glyph_string_set_size (result, N_ASCII_GLYPHS);
   glyph_string = pango_glyph_string_new ();
   for (i = MIN_ASCII_GLYPH; i < MAX_ASCII_GLYPH; i++)
     {
       const char text[2] = { i, 0 };
+
+      if (!pango_coverage_get (coverage, i))
+        {
+          result->glyphs[i - MIN_ASCII_GLYPH].glyph = PANGO_GLYPH_INVALID_INPUT;
+          continue;
+        }
 
       pango_shape_with_flags (text, 1,
                               text, 1,
@@ -970,13 +971,12 @@ create_ascii_glyphs (PangoFont *font)
                               PANGO_SHAPE_NONE);
 
       if (glyph_string->num_glyphs != 1)
-        {
-          pango_glyph_string_free (glyph_string);
-          pango_glyph_string_free (result);
-          return NULL;
-        }
-      result->glyphs[i - MIN_ASCII_GLYPH] = glyph_string->glyphs[0];
+        result->glyphs[i - MIN_ASCII_GLYPH].glyph = PANGO_GLYPH_INVALID_INPUT;
+      else
+        result->glyphs[i - MIN_ASCII_GLYPH] = glyph_string->glyphs[0];
     }
+
+  g_object_unref (coverage);
 
   pango_glyph_string_free (glyph_string);
 
@@ -1113,81 +1113,70 @@ parse_font (GtkCssParser *parser,
   if (font_name == NULL)
     return FALSE;
 
-  if (context->fontmap)
-    font = font_from_string (context->fontmap, font_name, FALSE);
-
   if (gtk_css_parser_has_url (parser))
     {
       char *url;
+      char *scheme;
+      GBytes *bytes;
+      GError *error = NULL;
+      GtkCssLocation start_location;
+      gboolean success = FALSE;
 
-      if (font != NULL)
+      start_location = *gtk_css_parser_get_start_location (parser);
+      url = gtk_css_parser_consume_url (parser);
+
+      if (url != NULL)
         {
-          gtk_css_parser_error_value (parser, "A font with this name already exists.");
-          /* consume the url to avoid more errors */
-          url = gtk_css_parser_consume_url (parser);
-          g_free (url);
-        }
-      else
-        {
-          char *scheme;
-          GBytes *bytes;
-          GError *error = NULL;
-          GtkCssLocation start_location;
-          gboolean success = FALSE;
-
-          start_location = *gtk_css_parser_get_start_location (parser);
-          url = gtk_css_parser_consume_url (parser);
-
-          if (url != NULL)
+          scheme = g_uri_parse_scheme (url);
+          if (scheme && g_ascii_strcasecmp (scheme, "data") == 0)
             {
-              scheme = g_uri_parse_scheme (url);
-              if (scheme && g_ascii_strcasecmp (scheme, "data") == 0)
-                {
-                  bytes = gtk_css_data_url_parse (url, NULL, &error);
-                }
-              else
-                {
-                  GFile *file;
+              bytes = gtk_css_data_url_parse (url, NULL, &error);
+            }
+          else
+            {
+              GFile *file;
 
-                  file = g_file_new_for_uri (url);
-                  bytes = g_file_load_bytes (file, NULL, NULL, &error);
-                  g_object_unref (file);
-                }
-
-              g_free (scheme);
-              g_free (url);
-              if (bytes != NULL)
-                {
-                  success = add_font_from_bytes (context, bytes, &error);
-                  g_bytes_unref (bytes);
-                }
-
-              if (!success)
-                {
-                  gtk_css_parser_emit_error (parser,
-                                             &start_location,
-                                             gtk_css_parser_get_end_location (parser),
-                                             error);
-                }
+              file = g_file_new_for_uri (url);
+              bytes = g_file_load_bytes (file, NULL, NULL, &error);
+              g_object_unref (file);
             }
 
-          if (success)
+          g_free (scheme);
+          g_free (url);
+          if (bytes != NULL)
             {
-              font = font_from_string (context->fontmap, font_name, FALSE);
-              if (!font)
-                {
-                  gtk_css_parser_error (parser,
-                                        GTK_CSS_PARSER_ERROR_UNKNOWN_VALUE,
-                                        &start_location,
-                                        gtk_css_parser_get_end_location (parser),
-                                        "The given url does not define a font named \"%s\"",
-                                        font_name);
-                }
+              success = add_font_from_bytes (context, bytes, &error);
+              g_bytes_unref (bytes);
+            }
+
+          if (!success)
+            {
+              gtk_css_parser_emit_error (parser,
+                                         &start_location,
+                                         gtk_css_parser_get_end_location (parser),
+                                         error);
+            }
+        }
+
+      if (success)
+        {
+          font = font_from_string (context->fontmap, font_name, FALSE);
+          if (!font)
+            {
+              gtk_css_parser_error (parser,
+                                    GTK_CSS_PARSER_ERROR_UNKNOWN_VALUE,
+                                    &start_location,
+                                    gtk_css_parser_get_end_location (parser),
+                                    "The given url does not define a font named \"%s\"",
+                                    font_name);
             }
         }
     }
   else
     {
+      if (context->fontmap)
+        font = font_from_string (context->fontmap, font_name, FALSE);
+
       if (!font)
         font = font_from_string (pango_cairo_font_map_get_default (), font_name, TRUE);
 
@@ -2255,6 +2244,12 @@ unpack_glyphs (PangoFont        *font,
                 return FALSE;
             }
 
+          if (ascii->glyphs[idx].glyph == PANGO_GLYPH_INVALID_INPUT)
+            {
+              g_clear_pointer (&ascii, pango_glyph_string_free);
+              return FALSE;
+            }
+
           gi->glyph = ascii->glyphs[idx].glyph;
           gi->geometry.width = ascii->glyphs[idx].geometry.width;
         }
@@ -2312,6 +2307,25 @@ parse_antialias (GtkCssParser *parser,
   return TRUE;
 }
 
+static gboolean
+parse_hint_metrics (GtkCssParser *parser,
+                    Context      *context,
+                    gpointer      out)
+{
+  if (!parse_enum (parser, CAIRO_GOBJECT_TYPE_HINT_METRICS, out))
+    return FALSE;
+
+  if (*(cairo_hint_metrics_t *) out != CAIRO_HINT_METRICS_OFF &&
+      *(cairo_hint_metrics_t *) out != CAIRO_HINT_METRICS_ON)
+    {
+      gtk_css_parser_error_value (parser, "Unsupported value for enum \"%s\"",
+                                  g_type_name (CAIRO_GOBJECT_TYPE_HINT_METRICS));
+      return FALSE;
+    }
+
+  return TRUE;
+}
+
 static GskRenderNode *
 parse_text_node (GtkCssParser *parser,
                  Context      *context)
@@ -2322,6 +2336,7 @@ parse_text_node (GtkCssParser *parser,
   PangoGlyphString *glyphs = NULL;
   cairo_hint_style_t hint_style = CAIRO_HINT_STYLE_SLIGHT;
   cairo_antialias_t antialias = CAIRO_ANTIALIAS_GRAY;
+  cairo_hint_metrics_t hint_metrics = CAIRO_HINT_METRICS_OFF;
   PangoFont *hinted;
   const Declaration declarations[] = {
     { "font", parse_font, clear_font, &font },
@@ -2330,6 +2345,7 @@ parse_text_node (GtkCssParser *parser,
     { "glyphs", parse_glyphs, clear_glyphs, &glyphs },
     { "hint-style", parse_hint_style, NULL, &hint_style },
     { "antialias", parse_antialias, NULL, &antialias },
+    { "hint-metrics", parse_hint_metrics, NULL, &hint_metrics },
   };
   GskRenderNode *result;
 
@@ -2341,7 +2357,7 @@ parse_text_node (GtkCssParser *parser,
       g_assert (font);
     }
 
-  hinted = gsk_reload_font (font, 1.0, CAIRO_HINT_METRICS_OFF, hint_style, antialias);
+  hinted = gsk_reload_font (font, 1.0, hint_metrics, hint_style, antialias);
   g_object_unref (font);
   font = hinted;
 
@@ -2925,7 +2941,7 @@ typedef struct
   gsize named_node_counter;
   GHashTable *named_textures;
   gsize named_texture_counter;
-  GHashTable *serialized_fonts;
+  GHashTable *fonts;
 } Printer;
 
 static void
@@ -2938,6 +2954,59 @@ printer_init_check_texture (Printer    *printer,
     g_hash_table_insert (printer->named_textures, texture, NULL);
   else if (name == NULL)
     g_hash_table_insert (printer->named_textures, texture, g_strdup (""));
+}
+
+typedef struct {
+  hb_face_t *face;
+  hb_subset_input_t *input;
+  gboolean serialized;
+} FontInfo;
+
+static void
+font_info_free (gpointer data)
+{
+  FontInfo *info = (FontInfo *) data;
+
+  hb_face_destroy (info->face);
+  if (info->input)
+    hb_subset_input_destroy (info->input);
+  g_free (info);
+}
+
+static void
+printer_init_collect_font_info (Printer       *printer,
+                                GskRenderNode *node)
+{
+  PangoFont *font;
+  FontInfo *info;
+
+  font = gsk_text_node_get_font (node);
+
+  info = (FontInfo *) g_hash_table_lookup (printer->fonts, hb_font_get_face (pango_font_get_hb_font (font)));
+  if (!info)
+    {
+      info = g_new0 (FontInfo, 1);
+
+      info->face = hb_face_reference (hb_font_get_face (pango_font_get_hb_font (font)));
+      if (!g_object_get_data (G_OBJECT (pango_font_get_font_map (font)), "font-files"))
+        {
+          info->input = hb_subset_input_create_or_fail ();
+          hb_subset_input_set_flags (info->input, HB_SUBSET_FLAGS_RETAIN_GIDS);
+        }
+
+      g_hash_table_insert (printer->fonts, info->face, info);
+    }
+
+  if (info->input)
+    {
+      const PangoGlyphInfo *glyphs;
+      guint n_glyphs;
+
+      glyphs = gsk_text_node_get_glyphs (node, &n_glyphs);
+
+      for (guint i = 0; i < n_glyphs; i++)
+        hb_set_add (hb_subset_input_glyph_set (info->input), glyphs[i].glyph);
+    }
 }
 
 static void
@@ -2955,6 +3024,9 @@ printer_init_duplicates_for_node (Printer       *printer,
     {
     case GSK_CAIRO_NODE:
     case GSK_TEXT_NODE:
+      printer_init_collect_font_info (printer, node);
+      break;
+
     case GSK_COLOR_NODE:
     case GSK_LINEAR_GRADIENT_NODE:
     case GSK_REPEATING_LINEAR_GRADIENT_NODE:
@@ -3078,7 +3150,7 @@ printer_init (Printer       *self,
   self->named_node_counter = 0;
   self->named_textures = g_hash_table_new_full (NULL, NULL, NULL, g_free);
   self->named_texture_counter = 0;
-  self->serialized_fonts = g_hash_table_new (g_str_hash, g_str_equal);
+  self->fonts = g_hash_table_new_full (g_direct_hash, g_direct_equal, NULL, font_info_free);
 
   printer_init_duplicates_for_node (self, node);
 }
@@ -3090,7 +3162,7 @@ printer_clear (Printer *self)
     g_string_free (self->str, TRUE);
   g_hash_table_unref (self->named_nodes);
   g_hash_table_unref (self->named_textures);
-  g_hash_table_unref (self->serialized_fonts);
+  g_hash_table_unref (self->fonts);
 }
 
 #define IDENT_LEVEL 2 /* Spaces per level */
@@ -3212,17 +3284,6 @@ append_rounded_rect (GString              *str,
 }
 
 static void
-append_rgba (GString       *str,
-             const GdkRGBA *rgba)
-{
-  char *rgba_str = gdk_rgba_to_string (rgba);
-
-  g_string_append (str, rgba_str);
-
-  g_free (rgba_str);
-}
-
-static void
 append_point (GString                *str,
               const graphene_point_t *p)
 {
@@ -3267,7 +3328,7 @@ append_rgba_param (Printer       *p,
 {
   _indent (p);
   g_string_append_printf (p->str, "%s: ", param_name);
-  append_rgba (p->str, value);
+  gdk_rgba_print (value, p->str);
   g_string_append_c (p->str, ';');
   g_string_append_c (p->str, '\n');
 }
@@ -3421,7 +3482,7 @@ append_stops_param (Printer            *p,
 
       string_append_double (p->str, stops[i].offset);
       g_string_append_c (p->str, ' ');
-      append_rgba (p->str, &stops[i].color);
+      gdk_rgba_print (&stops[i].color, p->str);
     }
   g_string_append (p->str, ";\n");
 }
@@ -3539,13 +3600,13 @@ append_texture_param (Printer    *p,
     case GDK_MEMORY_U8:
     case GDK_MEMORY_U16:
       bytes = gdk_texture_save_to_png_bytes (texture);
-      g_string_append (p->str, "url(\"data:image/png;base64,");
+      g_string_append (p->str, "url(\"data:image/png;base64,\\\n");
       break;
 
     case GDK_MEMORY_FLOAT16:
     case GDK_MEMORY_FLOAT32:
       bytes = gdk_texture_save_to_tiff_bytes (texture);
-      g_string_append (p->str, "url(\"data:image/tiff;base64,");
+      g_string_append (p->str, "url(\"data:image/tiff;base64,\\\n");
       break;
 
     default:
@@ -3562,13 +3623,45 @@ append_texture_param (Printer    *p,
 }
 
 static void
+print_font (PangoFont *font)
+{
+  PangoFontDescription *desc;
+  char *s;
+  hb_face_t *face;
+  hb_blob_t *blob;
+  const char *data;
+  unsigned int length;
+  char *csum;
+
+  desc = pango_font_describe_with_absolute_size (font);
+  s = pango_font_description_to_string (desc);
+
+  face = hb_font_get_face (pango_font_get_hb_font (font));
+  blob = hb_face_reference_blob (face);
+
+  data = hb_blob_get_data (blob, &length);
+  csum = g_compute_checksum_for_data (G_CHECKSUM_SHA256, (const guchar *)data, length);
+
+  g_print ("%s, face %p, sha %s\n", s, face, csum);
+
+  g_free (csum);
+  hb_blob_destroy (blob);
+  g_free (s);
+}
+
+static void
 gsk_text_node_serialize_font (GskRenderNode *node,
                               Printer       *p)
 {
   PangoFont *font = gsk_text_node_get_font (node);
-  PangoFontMap *fontmap = pango_font_get_font_map (font);
   PangoFontDescription *desc;
   char *s;
+  FontInfo *info;
+  hb_face_t *face;
+  hb_blob_t *blob;
+  const char *data;
+  guint length;
+  char *b64;
 
   desc = pango_font_describe_with_absolute_size (font);
   s = pango_font_description_to_string (desc);
@@ -3576,42 +3669,31 @@ gsk_text_node_serialize_font (GskRenderNode *node,
   g_free (s);
   pango_font_description_free (desc);
 
-  /* Check if this is  a custom font that we created from a url */
-  if (!g_object_get_data (G_OBJECT (fontmap), "font-files"))
+  g_print ("serializing ");
+  print_font (font);
+  info = g_hash_table_lookup (p->fonts, hb_font_get_face (pango_font_get_hb_font (font)));
+  if (info->serialized)
     return;
 
-#ifdef HAVE_PANGOFT
-  {
-    FcPattern *pat;
-    FcResult res;
-    const char *file;
-    char *data;
-    gsize len;
-    char *b64;
+  if (info->input)
+    face = hb_subset_or_fail (info->face, info->input);
+  else
+    face = hb_face_reference (info->face);
 
-    pat = pango_fc_font_get_pattern (PANGO_FC_FONT (font));
-    res = FcPatternGetString (pat, FC_FILE, 0, (FcChar8 **)&file);
-    if (res != FcResultMatch)
-      return;
+  blob = hb_face_reference_blob (face);
+  data = hb_blob_get_data (blob, &length);
 
-    if (g_hash_table_contains (p->serialized_fonts, file))
-      return;
+  b64 = base64_encode_with_linebreaks ((const guchar *) data, length);
 
-    if (!g_file_get_contents (file, &data, &len, NULL))
-      return;
+  g_string_append (p->str, " url(\"data:font/ttf;base64,\\\n");
+  append_escaping_newlines (p->str, b64);
+  g_string_append (p->str, "\")");
 
-    g_hash_table_add (p->serialized_fonts, (gpointer) file);
+  g_free (b64);
+  hb_blob_destroy (blob);
+  hb_face_destroy (face);
 
-    b64 = base64_encode_with_linebreaks ((const guchar *) data, len);
-
-    g_string_append (p->str, " url(\"data:font/ttf;base64,");
-    append_escaping_newlines (p->str, b64);
-    g_string_append (p->str, "\")");
-
-    g_free (b64);
-    g_free (data);
-  }
-#endif
+  info->serialized = TRUE;
 }
 
 static void
@@ -3623,11 +3705,13 @@ gsk_text_node_serialize_font_options (GskRenderNode *node,
   cairo_font_options_t *options;
   cairo_hint_style_t hint_style;
   cairo_antialias_t antialias;
+  cairo_hint_metrics_t hint_metrics;
 
   options = cairo_font_options_create ();
   cairo_scaled_font_get_font_options (sf, options);
   hint_style = cairo_font_options_get_hint_style (options);
   antialias = cairo_font_options_get_antialias (options);
+  hint_metrics = cairo_font_options_get_hint_metrics (options);
   cairo_font_options_destroy (options);
 
   /* medium and full are identical in the absence of subpixel modes */
@@ -3643,6 +3727,12 @@ gsk_text_node_serialize_font_options (GskRenderNode *node,
    */
   if (antialias == CAIRO_ANTIALIAS_NONE)
     append_enum_param (p, "antialias", CAIRO_GOBJECT_TYPE_ANTIALIAS, antialias);
+
+  /* CAIRO_HINT_METRICS_ON is the only value we ever emit here, since off is the default,
+   * and we don't accept any other values.
+   */
+  if (hint_metrics == CAIRO_HINT_METRICS_ON)
+    append_enum_param (p, "hint-metrics", CAIRO_GOBJECT_TYPE_HINT_METRICS, CAIRO_HINT_METRICS_ON);
 }
 
 void
@@ -4039,7 +4129,7 @@ render_node_print (Printer       *p,
               {
                 if (i > 0)
                   g_string_append_c (p->str, ' ');
-                append_rgba (p->str, &colors[i]);
+                gdk_rgba_print (&colors[i], p->str);
               }
             g_string_append (p->str, ";\n");
           }
@@ -4414,7 +4504,7 @@ render_node_print (Printer       *p,
             cairo_surface_write_to_png_stream (surface, cairo_write_array, array);
 
             _indent (p);
-            g_string_append (p->str, "pixels: url(\"data:image/png;base64,");
+            g_string_append (p->str, "pixels: url(\"data:image/png;base64,\\\n");
             b64 = base64_encode_with_linebreaks (array->data, array->len);
             append_escaping_newlines (p->str, b64);
             g_free (b64);
@@ -4434,7 +4524,7 @@ render_node_print (Printer       *p,
                 if (cairo_script_from_recording_surface (script, surface) == CAIRO_STATUS_SUCCESS)
                   {
                     _indent (p);
-                    g_string_append (p->str, "script: url(\"data:;base64,");
+                    g_string_append (p->str, "script: url(\"data:;base64,\\\n");
                     b64 = base64_encode_with_linebreaks (array->data, array->len);
                     append_escaping_newlines (p->str, b64);
                     g_free (b64);

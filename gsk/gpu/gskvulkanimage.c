@@ -433,6 +433,7 @@ GskGpuImage *
 gsk_vulkan_image_new_for_swapchain (GskVulkanDevice  *device,
                                     VkImage           image,
                                     VkFormat          format,
+                                    GdkMemoryFormat   memory_format,
                                     gsize             width,
                                     gsize             height)
 {
@@ -449,8 +450,8 @@ gsk_vulkan_image_new_for_swapchain (GskVulkanDevice  *device,
   self->vk_image_layout = VK_IMAGE_LAYOUT_UNDEFINED;
   self->vk_access = 0;
 
-  /* FIXME: The memory format and flags here are very suboptimal */
-  gsk_gpu_image_setup (GSK_GPU_IMAGE (self), 0, GDK_MEMORY_DEFAULT, width, height);
+  /* FIXME: The flags here are very suboptimal */
+  gsk_gpu_image_setup (GSK_GPU_IMAGE (self), 0, memory_format, width, height);
 
   gsk_vulkan_image_create_view (self,
                                 format,
@@ -825,7 +826,7 @@ gsk_vulkan_image_new_for_dmabuf (GskVulkanDevice *device,
   self->vk_tiling = VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT;
   self->vk_format = vk_format;
   self->vk_pipeline_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-  self->vk_image_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+  self->vk_image_layout = VK_IMAGE_LAYOUT_GENERAL;
   self->vk_access = 0;
 
   res  = vkCreateImage (vk_device,

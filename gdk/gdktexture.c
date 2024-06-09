@@ -50,6 +50,13 @@
 #include "loaders/gdktiffprivate.h"
 #include "loaders/gdkjpegprivate.h"
 
+/**
+ * gdk_texture_error_quark:
+ *
+ * Registers an error quark for [class@Gdk.Texture] errors.
+ *
+ * Returns: the error quark
+ **/
 G_DEFINE_QUARK (gdk-texture-error-quark, gdk_texture_error)
 
 /* HACK: So we don't need to include any (not-yet-created) GSK or GTK headers */
@@ -563,7 +570,7 @@ gdk_texture_new_from_bytes_internal (GBytes  *bytes,
 {
   if (gdk_is_png (bytes))
     {
-      return gdk_load_png (bytes, error);
+      return gdk_load_png (bytes, NULL, error);
     }
   else if (gdk_is_jpeg (bytes))
     {

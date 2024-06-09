@@ -1632,6 +1632,15 @@ typedef enum {
  *
  * The possible accessible properties of a [iface@Accessible].
  */
+
+/**
+ * GTK_ACCESSIBLE_PROPERTY_HELP_TEXT:
+ *
+ * Defines a string value that provides a description of non-standard keyboard
+ * interactions of the current element. Value type: string
+ *
+ * Since: 4.16
+ */
 typedef enum {
   GTK_ACCESSIBLE_PROPERTY_AUTOCOMPLETE,
   GTK_ACCESSIBLE_PROPERTY_DESCRIPTION,
@@ -1651,7 +1660,8 @@ typedef enum {
   GTK_ACCESSIBLE_PROPERTY_VALUE_MAX,
   GTK_ACCESSIBLE_PROPERTY_VALUE_MIN,
   GTK_ACCESSIBLE_PROPERTY_VALUE_NOW,
-  GTK_ACCESSIBLE_PROPERTY_VALUE_TEXT
+  GTK_ACCESSIBLE_PROPERTY_VALUE_TEXT,
+  GTK_ACCESSIBLE_PROPERTY_HELP_TEXT
 } GtkAccessibleProperty;
 
 /**
@@ -1811,16 +1821,17 @@ typedef enum { /*< prefix=GTK_ACCESSIBLE_SORT >*/
 
 /**
  * GtkAccessibleAnnouncementPriority:
- * @GTK_ANNOUNCEMENT_PRIORITY_LOW: The announcement is low priority, and might be read only
- *     on the user's request.
- * @GTK_ANNOUNCEMENT_PRIORITY_MEDIUM: The announcement is of medium priority, and is usually
- *     spoken at the next opportunity, such as at the end of speaking the current sentence
- *     or when the user pauses typing.
- * @GTK_ANNOUNCEMENT_PRIORITY_HIGH: The announcement is of high priority, and is usually
- *     spoken immediately. Because an interruption might disorient users or cause them to
- *     not complete their current task, authors SHOULD NOT use high priority announcements
- *     unless the interruption is imperative. An example would be a notification about a
- *     critical battery power level.
+ * @GTK_ACCESSIBLE_ANNOUNCEMENT_PRIORITY_LOW: The announcement is low priority,
+ *   and might be read only on the user's request.
+ * @GTK_ACCESSIBLE_ANNOUNCEMENT_PRIORITY_MEDIUM: The announcement is of medium
+ *   priority, and is usually spoken at the next opportunity, such as at the
+ *   end of speaking the current sentence or when the user pauses typing.
+ * @GTK_ACCESSIBLE_ANNOUNCEMENT_PRIORITY_HIGH: The announcement is of high
+ *   priority, and is usually spoken immediately. Because an interruption
+ *   might disorient users or cause them to not complete their current task,
+ *   authors SHOULD NOT use high priority announcements unless the
+ *   interruption is imperative. An example would be a notification about a
+ *   critical battery power level.
  *
  * The priority of an accessibility announcement.
  *

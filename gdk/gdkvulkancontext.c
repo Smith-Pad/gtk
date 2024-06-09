@@ -29,6 +29,8 @@
 #include "gdkdmabuffourccprivate.h"
 #include "gdkdmabuftextureprivate.h"
 #include "gdkdisplayprivate.h"
+#include "gdkprofilerprivate.h"
+#include "gdkmemorytexture.h"
 #include <glib/gi18n-lib.h>
 #include <math.h>
 
@@ -93,6 +95,13 @@ enum {
   LAST_SIGNAL
 };
 
+/**
+ * gdk_vulkan_error_quark:
+ *
+ * Registers an error quark for [class@Gdk.VulkanContext] errors.
+ *
+ * Returns: the error quark
+ **/
 G_DEFINE_QUARK (gdk-vulkan-error-quark, gdk_vulkan_error)
 
 static guint signals[LAST_SIGNAL] = { 0 };
@@ -606,7 +615,8 @@ physical_device_check_features (VkPhysicalDevice device)
     features |= GDK_VULKAN_FEATURE_YCBCR;
 
   if (physical_device_supports_extension (device, VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME) &&
-      physical_device_supports_extension (device, VK_EXT_IMAGE_DRM_FORMAT_MODIFIER_EXTENSION_NAME))
+      physical_device_supports_extension (device, VK_EXT_IMAGE_DRM_FORMAT_MODIFIER_EXTENSION_NAME) &&
+      physical_device_supports_extension (device, VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME))
     features |= GDK_VULKAN_FEATURE_DMABUF;
 
   if (physical_device_supports_extension (device, VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME))
@@ -631,33 +641,54 @@ gdk_vulkan_context_begin_frame (GdkDrawContext *draw_context,
 {
   GdkVulkanContext *context = GDK_VULKAN_CONTEXT (draw_context);
   GdkVulkanContextPrivate *priv = gdk_vulkan_context_get_instance_private (context);
+  VkResult acquire_result;
   guint i;
 
   if (depth != priv->current_format)
     {
       if (priv->formats[depth].gdk_format != priv->formats[priv->current_format].gdk_format)
         {
+          GdkMemoryFormat old_format = priv->current_format;
           GError *error = NULL;
+
+          priv->current_format = depth;
           if (!gdk_vulkan_context_check_swapchain (context, &error))
             {
               g_warning ("%s", error->message);
               g_error_free (error);
+              priv->current_format = old_format;
               return;
             }
         }
-      priv->current_format = depth;
     }
   for (i = 0; i < priv->n_images; i++)
     {
       cairo_region_union (priv->regions[i], region);
     }
 
-  GDK_VK_CHECK (vkAcquireNextImageKHR, gdk_vulkan_context_get_device (context),
-                                       priv->swapchain,
-                                       UINT64_MAX,
-                                       priv->draw_semaphore,
-                                       VK_NULL_HANDLE,
-                                       &priv->draw_index);
+acquire_next_image:
+  acquire_result = GDK_VK_CHECK (vkAcquireNextImageKHR, gdk_vulkan_context_get_device (context),
+                                                        priv->swapchain,
+                                                        UINT64_MAX,
+                                                        priv->draw_semaphore,
+                                                        VK_NULL_HANDLE,
+                                                        &priv->draw_index);
+  if ((acquire_result == VK_ERROR_OUT_OF_DATE_KHR) ||
+      (acquire_result == VK_SUBOPTIMAL_KHR))
+    {
+      GError *error = NULL;
+
+      GDK_DEBUG (VULKAN, "Recreating the swapchain");
+
+      if (!gdk_vulkan_context_check_swapchain (context, &error))
+        {
+          g_warning ("%s", error->message);
+          g_error_free (error);
+          return;
+        }
+
+       goto acquire_next_image;
+     }
 
   cairo_region_union (region, priv->regions[priv->draw_index]);
 }
@@ -1110,6 +1141,7 @@ gdk_display_load_pipeline_cache (GdkDisplay *display)
 static gboolean
 gdk_vulkan_save_pipeline_cache (GdkDisplay *display)
 {
+  G_GNUC_UNUSED gint64 begin_time = GDK_PROFILER_CURRENT_TIME;
   GError *error = NULL;
   VkDevice device;
   VkPipelineCache cache;
@@ -1124,13 +1156,12 @@ gdk_vulkan_save_pipeline_cache (GdkDisplay *display)
   GDK_VK_CHECK (vkGetPipelineCacheData, device, cache, &size, NULL);
   if (size == 0)
     return TRUE;
-  
+
   if (size == display->vk_pipeline_cache_size)
     {
       GDK_DEBUG (VULKAN, "pipeline cache size (%zu bytes) unchanged, skipping save", size);
       return TRUE;
     }
-
 
   data = g_malloc (size);
   if (GDK_VK_CHECK (vkGetPipelineCacheData, device, cache, &size, data) != VK_SUCCESS)
@@ -1151,7 +1182,7 @@ gdk_vulkan_save_pipeline_cache (GdkDisplay *display)
 
   file = gdk_vulkan_get_pipeline_cache_file (display);
 
-  GDK_DEBUG (VULKAN, "Saving pipeline cache to %s", g_file_peek_path (file));
+  GDK_DEBUG (VULKAN, "Saving pipeline cache of size %lu to %s", size, g_file_peek_path (file));
 
   if (!g_file_replace_contents (file,
                                 data,
@@ -1166,7 +1197,7 @@ gdk_vulkan_save_pipeline_cache (GdkDisplay *display)
       if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_WRONG_ETAG))
         {
           VkPipelineCache new_cache;
-          
+
           GDK_DEBUG (VULKAN, "Pipeline cache file modified, merging into current");
           new_cache = gdk_display_load_pipeline_cache (display);
           if (new_cache)
@@ -1193,10 +1224,15 @@ gdk_vulkan_save_pipeline_cache (GdkDisplay *display)
       return FALSE;
     }
 
+  gdk_profiler_end_markf (begin_time,
+                          "Save Vulkan pipeline cache", "%s size %lu",
+                          g_file_peek_path (file), size);
+
   g_object_unref (file);
   g_free (data);
   g_free (display->vk_pipeline_cache_etag);
   display->vk_pipeline_cache_etag = etag;
+  display->vk_pipeline_cache_size = size;
 
   return TRUE;
 }
@@ -1236,6 +1272,11 @@ gdk_display_create_pipeline_cache (GdkDisplay *display)
                                            },
                                            NULL,
                                            &display->vk_pipeline_cache);
+      GDK_DEBUG (VULKAN, "Creating empty pipeline cache");
+    }
+  else
+    {
+      GDK_DEBUG (VULKAN, "Loading pipeline cache (%lu bytes)", display->vk_pipeline_cache_size);
     }
 }
 
@@ -1257,6 +1298,15 @@ gdk_vulkan_context_get_image_format (GdkVulkanContext *context)
   return priv->formats[priv->current_format].vk_format.format;
 }
 
+GdkMemoryFormat
+gdk_vulkan_context_get_memory_format (GdkVulkanContext *context)
+{
+  GdkVulkanContextPrivate *priv = gdk_vulkan_context_get_instance_private (context);
+
+  g_return_val_if_fail (GDK_IS_VULKAN_CONTEXT (context), GDK_MEMORY_DEFAULT);
+
+  return priv->formats[priv->current_format].gdk_format;
+}
 /**
  * gdk_vulkan_context_get_n_images:
  * @context: a `GdkVulkanContext`
@@ -1345,6 +1395,7 @@ static gboolean
 gdk_display_create_vulkan_device (GdkDisplay  *display,
                                   GError     **error)
 {
+  G_GNUC_UNUSED gint64 start_time = GDK_PROFILER_CURRENT_TIME;
   uint32_t i, j, k;
   const char *override;
   gboolean list_devices;
@@ -1487,6 +1538,7 @@ gdk_display_create_vulkan_device (GdkDisplay  *display,
 
                   g_ptr_array_add (device_extensions, (gpointer) VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME);
                   g_ptr_array_add (device_extensions, (gpointer) VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME);
+                  g_ptr_array_add (device_extensions, (gpointer) VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME);
 
                   g_ptr_array_add (device_extensions, (gpointer) VK_EXT_IMAGE_DRM_FORMAT_MODIFIER_EXTENSION_NAME);
                   g_ptr_array_add (device_extensions, (gpointer) VK_KHR_IMAGE_FORMAT_LIST_EXTENSION_NAME);
@@ -1553,6 +1605,8 @@ gdk_display_create_vulkan_device (GdkDisplay  *display,
                                        "Hum, what? This should not happen.")));
                 }
 
+              gdk_profiler_end_mark (start_time, "Create Vulkan device", NULL);
+
               return TRUE;
             }
         }
@@ -1591,6 +1645,7 @@ static gboolean
 gdk_display_create_vulkan_instance (GdkDisplay  *display,
                                     GError     **error)
 {
+  G_GNUC_UNUSED gint64 start_time = GDK_PROFILER_CURRENT_TIME;
   uint32_t i;
   GPtrArray *used_extensions;
   GPtrArray *used_layers;
@@ -1752,6 +1807,8 @@ gdk_display_create_vulkan_instance (GdkDisplay  *display,
 
   display->vk_shader_modules = g_hash_table_new (g_str_hash, g_str_equal);
 
+  gdk_profiler_end_mark (start_time, "Create Vulkan instance", NULL);
+
   return TRUE;
 }
 
@@ -1822,8 +1879,9 @@ gdk_display_unref_vulkan (GdkDisplay *display)
     {
       g_free (key);
       vkDestroyShaderModule (display->vk_device,
-                             value,
+                             *((VkShaderModule *)value),
                              NULL);
+      g_free (value);
     }
   g_hash_table_unref (display->vk_shader_modules);
 
@@ -1951,13 +2009,13 @@ VkShaderModule
 gdk_display_get_vk_shader_module (GdkDisplay *self,
                                   const char *resource_name)
 {
-  VkShaderModule shader;
+  VkShaderModule *shader;
   GError *error = NULL;
   GBytes *bytes;
 
   shader = g_hash_table_lookup (self->vk_shader_modules, resource_name);
   if (shader)
-    return shader;
+    return *shader;
 
   bytes = g_resources_lookup_data (resource_name, 0, &error);
   if (bytes == NULL)
@@ -1967,6 +2025,7 @@ gdk_display_get_vk_shader_module (GdkDisplay *self,
       return VK_NULL_HANDLE;
     }
 
+  shader = g_new0 (VkShaderModule, 1);
   if (GDK_VK_CHECK (vkCreateShaderModule, self->vk_device,
                                           &(VkShaderModuleCreateInfo) {
                                               .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
@@ -1974,18 +2033,20 @@ gdk_display_get_vk_shader_module (GdkDisplay *self,
                                               .pCode = (uint32_t *) g_bytes_get_data (bytes, NULL),
                                           },
                                           NULL,
-                                          &shader) == VK_SUCCESS)
+                                          shader) == VK_SUCCESS)
     {
       g_hash_table_insert (self->vk_shader_modules, g_strdup (resource_name), shader);
     }
   else
     {
-      shader = VK_NULL_HANDLE;
+      g_free (shader);
+
+      return VK_NULL_HANDLE;
     }
 
   g_bytes_unref (bytes);
 
-  return shader;
+  return *shader;
 }
 
 #else /* GDK_RENDERING_VULKAN */
