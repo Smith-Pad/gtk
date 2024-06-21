@@ -840,12 +840,23 @@ gtk_label_update_layout_attributes (GtkLabel      *self,
             }
 
           link_color = gtk_css_color_value_get_rgba (style->core->color);
-          attr = pango_attr_foreground_new (link_color->red * 65535,
-                                            link_color->green * 65535,
-                                            link_color->blue * 65535);
+
+          attr = pango_attr_foreground_new (CLAMP (link_color->red * 65535. + 0.5, 0, 65535),
+                                            CLAMP (link_color->green * 65535. + 0.5, 0, 65535),
+                                            CLAMP (link_color->blue * 65535. + 0.5, 0, 65535));
+
           attr->start_index = link->start;
           attr->end_index = link->end;
           pango_attr_list_insert (attrs, attr);
+
+          if (link_color->alpha < 0.999)
+            {
+              attr = pango_attr_foreground_alpha_new (CLAMP (link_color->alpha * 65535. + 0.5, 0, 65535));
+
+              attr->start_index = link->start;
+              attr->end_index = link->end;
+              pango_attr_list_insert (attrs, attr);
+            }
 
           pango_attr_list_unref (link_attrs);
         }
@@ -3424,6 +3435,29 @@ finish_text (UriParserData *pdata)
 }
 
 static void
+link_style_changed_cb (GtkCssNode        *node,
+                       GtkCssStyleChange *change,
+                       GtkLabel          *self)
+{
+  if (gtk_css_style_change_affects (change,
+                                    GTK_CSS_AFFECTS_CONTENT |
+                                    GTK_CSS_AFFECTS_TEXT_ATTRS))
+    {
+      gtk_label_ensure_layout (self);
+      gtk_widget_queue_draw (GTK_WIDGET (self));
+    }
+}
+
+static void
+selection_style_changed_cb (GtkCssNode        *node,
+                            GtkCssStyleChange *change,
+                            GtkLabel          *self)
+{
+  if (gtk_css_style_change_affects (change, GTK_CSS_AFFECTS_REDRAW))
+    gtk_widget_queue_draw (GTK_WIDGET (self));
+}
+
+static void
 start_element_handler (GMarkupParseContext  *context,
                        const char           *element_name,
                        const char          **attribute_names,
@@ -3511,6 +3545,7 @@ start_element_handler (GMarkupParseContext  *context,
       gtk_css_node_set_parent (link.cssnode, widget_node);
       if (class)
         gtk_css_node_add_class (link.cssnode, g_quark_from_string (class));
+      g_signal_connect (link.cssnode, "style-changed", G_CALLBACK (link_style_changed_cb), self);
 
       state = gtk_css_node_get_state (widget_node);
       if (visited)
@@ -5129,6 +5164,8 @@ gtk_label_select_region_index (GtkLabel *self,
               gtk_css_node_set_name (self->select_info->selection_node, g_quark_from_static_string ("selection"));
               gtk_css_node_set_parent (self->select_info->selection_node, widget_node);
               gtk_css_node_set_state (self->select_info->selection_node, gtk_css_node_get_state (widget_node));
+              g_signal_connect (self->select_info->selection_node, "style-changed",
+                                G_CALLBACK (selection_style_changed_cb), self);
               g_object_unref (self->select_info->selection_node);
             }
         }
@@ -6277,3 +6314,4 @@ gtk_label_accessible_text_init (GtkAccessibleTextInterface *iface)
 /* }}} */
 
 /* vim:set foldmethod=marker expandtab: */
+

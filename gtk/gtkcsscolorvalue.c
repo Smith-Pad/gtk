@@ -357,6 +357,30 @@ gtk_css_value_color_print (const GtkCssValue *value,
             g_string_append (string, " srgb-linear");
             break;
 
+          case GTK_CSS_COLOR_SPACE_DISPLAY_P3:
+            g_string_append (string, "color(from ");
+            gtk_css_value_print (value->relative.origin, string);
+            g_string_append (string, " display-p3");
+            break;
+
+          case GTK_CSS_COLOR_SPACE_XYZ:
+            g_string_append (string, "color(from ");
+            gtk_css_value_print (value->relative.origin, string);
+            g_string_append (string, " xyz");
+            break;
+
+          case GTK_CSS_COLOR_SPACE_REC2020:
+            g_string_append (string, "color(from ");
+            gtk_css_value_print (value->relative.origin, string);
+            g_string_append (string, " rec2020");
+            break;
+
+          case GTK_CSS_COLOR_SPACE_REC2100_PQ:
+            g_string_append (string, "color(from ");
+            gtk_css_value_print (value->relative.origin, string);
+            g_string_append (string, " rec2100-pq");
+            break;
+
           case GTK_CSS_COLOR_SPACE_HSL:
             g_string_append (string, "hsl(from ");
             gtk_css_value_print (value->relative.origin, string);
@@ -1627,6 +1651,8 @@ parse_color_color_channel (GtkCssParser *parser,
                            ParseData    *data,
                            guint         arg)
 {
+  const GtkCssToken *token;
+
   switch (arg)
     {
     case 0:
@@ -1642,7 +1668,35 @@ parse_color_color_channel (GtkCssParser *parser,
           return 1;
         }
 
-      gtk_css_parser_error_syntax (parser, "Invalid color space in color()");
+      if (gtk_css_parser_try_ident (parser, "display-p3"))
+        {
+          data->ctx.color_space = GTK_CSS_COLOR_SPACE_DISPLAY_P3;
+          return 1;
+        }
+
+      if (gtk_css_parser_try_ident (parser, "xyz"))
+        {
+          data->ctx.color_space = GTK_CSS_COLOR_SPACE_XYZ;
+          return 1;
+        }
+
+      if (gtk_css_parser_try_ident (parser, "rec2020"))
+        {
+          data->ctx.color_space = GTK_CSS_COLOR_SPACE_REC2020;
+          return 1;
+        }
+
+      if (gtk_css_parser_try_ident (parser, "rec2100-pq"))
+        {
+          data->ctx.color_space = GTK_CSS_COLOR_SPACE_REC2100_PQ;
+          return 1;
+        }
+
+      token = gtk_css_parser_get_token (parser);
+      gtk_css_parser_error_syntax (parser,
+                                   "Invalid color space in color(): %s",
+                                   gtk_css_token_to_string (token));
+
       return 0;
 
     case 1:
